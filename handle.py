@@ -90,23 +90,33 @@ class chattimer(threading.Thread):
 		self.chatlock = chatlock
 		threading.Thread.__init__ ( self )
 	def run(self):
-		x = self.time * 60
-		if x > 360:
-			x = x - 360
-			time.sleep(x)
-		while x >= 30:
-			if x > 60:
-				self.chatlock.acquire()
-				print self.message + ' in' + str(x/60) + ' minutes'
-				self.chatlock.release()
-			if x < 60:
-				self.chatlock.acquire()
-				print self.message + ' in' + str(x) + ' secs'
-				self.chatlock.release()
-				x = x/2
+		x = self.time
+		
+		while x > 360:
 			if self.cancel.isSet():
+				print self.message + ' timer canceling'
+				self.signal.set()
 				return ''
-			time.sleep(x)
+			x = x - 10
+			time.sleep(10)
+		threshhold = 360		
+		while x <= 360 and x > 20:
+			if self.cancel.isSet():
+				print self.message + ' timer canceling'
+				self.signal.set()
+				return ''
+			if x > 60 and x <= threshhold:
+				self.chatlock.acquire()
+				print self.message + ' in ' + str(x/60) + ' minutes'
+				self.chatlock.release()
+				threshhold = x/2
+			if x < 60 and x <=threshhold:
+				self.chatlock.acquire()
+				print self.message + ' in ' + str(x) + ' secs'
+				self.chatlock.release()
+				threshhold = x/2
+				x = x - 30
+			time.sleep(30)
 		self.chatlock.acquire()
 		print self.message + 'in 15 secs'
 		self.chatlock.release()
@@ -118,6 +128,8 @@ class chattimer(threading.Thread):
 		y = 5
 		while y > 0:
 			if self.cancel.isSet():
+				self.signal.set()
+				print self.message + ' timer canceling'
 				return ''
 			self.chatlock.acquire()
 			print self.message + 'in ' + str(y) + ' secs'
@@ -128,60 +140,87 @@ class chattimer(threading.Thread):
 
 			
 class mapper(threading.Thread):
-	def __init__( self, event, locks):
+	def __init__( self, event, objlock, locks):
 		self.event = event
 		self.locks = locks
+		self.objlock  = objlock
 		threading.Thread.__init__ ( self )
 	def run(self):
 		#Load config
+		self.objlock.acquire()
 		configfile = ConfigParser.RawConfigParser()
 		configfile.read('handle.cfg')
 		interval = configfile.getint('Mapper','interval')
 		signal = threading.Event()
-		timer = chattimer(signal, self.event, 'Server map', interval, locks['chat'])
+		timer = chattimer(signal, self.event, 'Server map', interval, self.locks['chat'])
 		timer.start()
 		signal.wait()
-		updatewd()
+		if self.event.isSet():
+			self.objlock.release()
+			print 'Mapper canceling'
+			return ''
+		#updatewd()
 		self.locks['cwc'].acquire()
 		print 'Mapping......',
 		time.sleep(5)
 		print 'Done!'
 		self.locks['cwc'].release()
+		self.objlock.release()
 		
 class backup(threading.Thread):
-	def __init__( self, event, locks):
+	def __init__( self, event, objlock, locks):
 		self.event = event
 		self.locks = locks
+		self.objlock = objlock
 		threading.Thread.__init__ ( self )
 	def run(self):
 		#Load config
+		self.objlock.acquire()
 		configfile = ConfigParser.RawConfigParser()
 		configfile.read('handle.cfg')
 		interval = configfile.getint('Backup','interval')
 		signal = threading.Event()
-		timer = chattimer(signal, self.event, 'Backup', interval, locks['chat'])
+		timer = chattimer(signal, self.event, 'Backup', interval, self.locks['chat'])
 		timer.start()
+		print 'started thread'
 		signal.wait()
-		updatewd()
+		if self.event.isSet():
+			self.objlock.release()
+			print 'Backup cancelling'
+			return ''
+		#updatewd()
 		self.locks['cwc'].acquire()
 		print 'Backing up......',
 		time.sleep(5)
 		print 'Done!'
 		self.locks['cwc'].release()
-		
+		self.objlocks.release()
 class scheduler(threading.Thread):
-	def __init__( self, locks, events, queue):
+	def __init__( self, locks, events, objs, config):
 		self.locks = locks
 		self.events = events
-		self.queue = queue
+		self.objs = objs
+		self.config = config
+		#self.queue = queue
 		
 
 		threading.Thread.__init__ ( self )
 	def run(self):
-		print ''
-
-			
-			
+		while config['serverstop'].isSet() !=True:
+			x = 0
+			while x <= (len(self.objs)-1):
+				if self.locks[x].acquire(False):
+					self.locks[x].release()
+					thread = self.objs[x](self.events[x], self.locks[x], self.config['locks'])
+					thread.start()
+				x = x + 1
+			time.sleep(10)
+		x = 0
+		while x <= (len(self.objs)-1):
+			self.events[x].set()
+			self.locks[x].acquire()
+			x = x+1
+		config['allclear'].set()
 
 def getversion():
 	#Read from CraftBukkit Build RSS
@@ -225,6 +264,7 @@ def initserverlocks():
 	serverlocks['server'] = threading.Lock()
 	serverlocks['cwc'] = threading.Lock()
 	serverlocks['world'] = threading.Lock()
+	serverlocks['chat'] = threading.Lock()
 	return serverlocks
 
 def initevents(objs):
@@ -238,7 +278,8 @@ def initevents(objs):
 	
 def initobjs():
 	objs = []
-	objs.append(globals()['update'])
+	objs.append(globals()['mapper'])
+	objs.append(globals()['backup'])
 	
 	print 'Done obtaining objects'
 	return objs
@@ -251,7 +292,13 @@ schedulerlocks = initschlocks(objs)
 serverlocks = initserverlocks()
 events = initevents(objs)
 serverstop = threading.Event()
+config['serverstop'] = serverstop
+config['locks'] = serverlocks
+config['allclear'] = threading.Event()
 servercontroller = servercontrol('start', config, serverlocks['server'], serverstop)
+scheduler = scheduler(schedulerlocks, events, objs, config)
 servercontroller.start()
+scheduler.start()
 test = raw_input()
 serverstop.set()
+config['allclear'].wait()
