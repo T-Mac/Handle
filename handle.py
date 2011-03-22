@@ -3,6 +3,7 @@ import ConfigParser
 import threading
 import time
 import sys
+import os
 
 class runfunc(threading.Thread):
 	def __init__( self, func, lockobj):
@@ -51,22 +52,25 @@ class servercontrol(threading.Thread):
 		self.config = config
 		threading.Thread.__init__ ( self )
 	def run(self):
+		print self.config['bukkit']
 		if self.config['bukkit'][-1:] != '/':
 			path = self.config['bukkit'] + '/craftbukkit.jar'
 		else:
 			path = self.config['bukkit'] + 'craftbukkit.jar'
-		startcmd = 'screen -dmS ' + self.config['screen'] +  ' java -Xmx' + str(self.config['startheap']) + ' -Xms' + str(config['maxheap'])  + ' -jar' + str(path)
-		stopcmd = 'screen -S ' + self.config['screen'] + '-p 0 -X stuff "`printf "stop\r"`"'
+		startcmd = 'screen -dmS ' + self.config['screenbukkit'] +  ' java -Xmx' + str(self.config['startheap']) + 'M -Xms' + str(config['maxheap'])  + 'M -jar ' + str(path)
+		stopcmd = 'screen -S ' + self.config['screenbukkit'] + ' -p 0 -X stuff "`printf "stop\r"`"'
 		if self.oper == 'start':
 			print 'Starting Server....'
 			self.lockobj.acquire()
+			print startcmd
 			os.system(startcmd)
 			print 'Server Started!'
+			print ' Waiting for shutdown......'
 			self.eventobj.wait()
-			#self.lockobj.release()
+			self.lockobj.release()
 		#elif self.oper == 'stop':
 			#chatttimer('Server', 60)
-			#os.system(stopcmd)
+			os.system(stopcmd)
 		elif self.oper =='restart':
 			#chattimer('Server Restart', 300)
 			print 'Stopping Server....'
@@ -78,38 +82,92 @@ class servercontrol(threading.Thread):
 			print 'Server Started!'
 			
 class chattimer(threading.Thread):
-	def __init__( self, lockobj, eventobj, message, time, function, chatlock):
-		self.eventobj = eventobj
-		self.massage = message
+	def __init__( self, signalevent, cancelevent, message, time, chatlock):
+		self.signal = signalevent
+		self.message = message
 		self.time = time
-		self.function = function
-		self.lockobj = lockobj
+		self.cancel = cancelevent
+		self.chatlock = chatlock
 		threading.Thread.__init__ ( self )
 	def run(self):
-		x = self.timer
+		x = self.time * 60
 		if x > 360:
 			x = x - 360
 			time.sleep(x)
 		while x >= 30:
 			if x > 60:
+				self.chatlock.acquire()
 				print self.message + ' in' + str(x/60) + ' minutes'
+				self.chatlock.release()
 			if x < 60:
+				self.chatlock.acquire()
 				print self.message + ' in' + str(x) + ' secs'
-			x = x/2
+				self.chatlock.release()
+				x = x/2
+			if self.cancel.isSet():
+				return ''
 			time.sleep(x)
+		self.chatlock.acquire()
 		print self.message + 'in 15 secs'
+		self.chatlock.release()
 		time.sleep(5)
+		self.chatlock.acquire()
 		print self.message + 'in 10 secs'
+		self.chatlock.release()
 		time.sleep(5)
 		y = 5
 		while y > 0:
+			if self.cancel.isSet():
+				return ''
+			self.chatlock.acquire()
 			print self.message + 'in ' + str(y) + ' secs'
+			self.chatlock.release()
 			time.sleep(1)
 			y = y-1
-		thread = self.function()
-		thread.start()
+		self.signal.set()
 
 			
+class mapper(threading.Thread):
+	def __init__( self, event, locks):
+		self.event = event
+		self.locks = locks
+		threading.Thread.__init__ ( self )
+	def run(self):
+		#Load config
+		configfile = ConfigParser.RawConfigParser()
+		configfile.read('handle.cfg')
+		interval = configfile.getint('Mapper','interval')
+		signal = threading.Event()
+		timer = chattimer(signal, self.event, 'Server map', interval, locks['chat'])
+		timer.start()
+		signal.wait()
+		updatewd()
+		self.locks['cwc'].acquire()
+		print 'Mapping......',
+		time.sleep(5)
+		print 'Done!'
+		self.locks['cwc'].release()
+		
+class backup(threading.Thread):
+	def __init__( self, event, locks):
+		self.event = event
+		self.locks = locks
+		threading.Thread.__init__ ( self )
+	def run(self):
+		#Load config
+		configfile = ConfigParser.RawConfigParser()
+		configfile.read('handle.cfg')
+		interval = configfile.getint('Backup','interval')
+		signal = threading.Event()
+		timer = chattimer(signal, self.event, 'Backup', interval, locks['chat'])
+		timer.start()
+		signal.wait()
+		updatewd()
+		self.locks['cwc'].acquire()
+		print 'Backing up......',
+		time.sleep(5)
+		print 'Done!'
+		self.locks['cwc'].release()
 		
 class scheduler(threading.Thread):
 	def __init__( self, locks, events, queue):
@@ -135,25 +193,14 @@ def getversion():
 def loadconfig():
 	if os.path.exists('handle.cfg'):
 		#Parse Config File
+		config = {}
 		configfile = ConfigParser.RawConfigParser()
 		configfile.read('handle.cfg')
-		#Load Options
-		config['autoup'] = configfile.getboolean('Config','autoupdate')
-		config['bukkit'] = configfile.get('Config','pathtobukkit')
-		config['interval'] = configfile.getint('Config','updateevery')
-		config['startheap'] = configfile.getint('Config','startheap')
-		config['maxheap'] = configfile.getint('Config','maxheap')
-		config['screen'] = configfile.getint('Config','screen')
-		#Load Build Number if known
-		if configfile.has_option('Config','currentbuild'):
-			config['instbuild'] = configfile.getint('Config','currentbuild')
-		else:	
-			#otherwise set to 0 and save it
-			config['instbuild'] = 0
-			configfile.set('Config','currentbuild','0')
-			configfile2 = open('bukkitup.cfg', 'wb')
-			configfile.write(configfile2)
-			configfile2.close()
+		config['bukkit'] = configfile.get('Handle','path_to_bukkit')
+		config['startheap'] = configfile.getint('Handle','start_heap')
+		config['maxheap'] = configfile.getint('Handle','max_heap')
+		config['screenbukkit'] = configfile.get('Handle','screen_bukkit')
+		return config
 	else:
 		print 'No config file found'
 		print 'Quitting......'
@@ -165,36 +212,46 @@ def updatecheck(config):
 	else:
 		return 0
 		
-def initlocks(objs):
+def initschlocks(objs):
 	x = len(objs)
 	locks = []
 	while x >=0:
 		locks.append(threading.Lock()	)
-		x = x+1
+		x = x-1
 	print 'Done allocating locks'
 	return locks
-	
+def initserverlocks():
+	serverlocks = {}
+	serverlocks['server'] = threading.Lock()
+	serverlocks['cwc'] = threading.Lock()
+	serverlocks['world'] = threading.Lock()
+	return serverlocks
+
 def initevents(objs):
-	x = lens(objs)
+	x = len(objs)
 	events = []
 	while x >=0:
-		events.append(thredding.Event())
-		x = x+1
+		events.append(threading.Event())
+		x = x-1
 	print 'Done allocating events'
-		
-def initobjs():
-	objs = ['servercontrol', 'mapper', 'chat',]
+	return events
 	
+def initobjs():
+	objs = []
+	objs.append(globals()['update'])
+	
+	print 'Done obtaining objects'
+	return objs
 def threadcreate(name):
 	threadid = globals()[name]
-	
-	
-class test(threading.Thread):			
-	def test(self, test):
-		print test		
-		test = 'blah2'
-		return test
 
-blah = test()
-blah2 = blah.test('11')
-print blah2
+config = loadconfig()
+objs = initobjs()
+schedulerlocks = initschlocks(objs)
+serverlocks = initserverlocks()
+events = initevents(objs)
+serverstop = threading.Event()
+servercontroller = servercontrol('start', config, serverlocks['server'], serverstop)
+servercontroller.start()
+test = raw_input()
+serverstop.set()
