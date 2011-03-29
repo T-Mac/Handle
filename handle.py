@@ -404,6 +404,7 @@ serverque = config['serverque']
 config['serverque'].put_nowait('start')
 servercontroller = servercontrol(config['serverque'], config, serverlocks['server'], serverstop)
 scheduler = scheduler(schedulerlocks, events, objs, config, config['schedque'])
+print 'Handle version 0.1'
 servercontroller.start()
 scheduler.start()
 test = raw_input()
