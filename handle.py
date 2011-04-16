@@ -14,14 +14,140 @@ class runfunc(threading.Thread):
 	def run(self):
 		result = globals()[self.func](self.lockobj)
 		
+		
+#--------------------------Class to handle all config files and globaly needed objects----------------------------	--------
+class database():
+	def __init__(self):
+		config = {}
+		configfile = ConfigParser.RawConfigParser()
+		configfile.read('handle.cfg')
+		sections = configfile.sections()
+		for section in sections:
+			options = configfile.options(section)
+			internal = {}
+			for option in options:
+				internal[option] = configfile.get(section,option)
+			config[section] = internal
+		self.config = config
+		self.threads = {}
+		self.threadstatus = {}
+		self.queue = {}
+		self.uid = 0
+		self.locks = {}
+		self.exit = None
+		self.autoids = []
+		self.autoobjs = {}
+		self.allclear = threading.Event()
+		
+
+		
+	def initserver(self):
+		self.makeque('server')
+		self.makeque('scheduler')
+		self.makelock('server')
+		self.makelock('chat')
+		self.makelock('cwc')
+	
+	def checkid(self,dict,id):
+		if dict.get(id, None) != None:
+			raise KeyError('Id: ' + str(id) + ' already exists')
+			
+	def getconf(self,section = None,option = None):
+		if option == None:
+			if section == None:
+				return self.config
+			else:
+				return self.config[section]
+		else:	
+			return self.config[section][option]
+			
+	def prune(self):
+		for k, v in self.threadstatus.items():
+			if v == 'reviewed':
+				del self.threads[k]
+				del self.threadstatus[k]
+			
+	def cancel(self):
+		self.exit = 1
+		
+	def threadadd(self, object, id = None):
+		if id == None:
+			id = self.uid
+			self.uid += 1	
+		else:
+			if self.threads.get(id, None) != None:
+				raise KeyError('Id: ' + str(id) + ' already exists')
+
+		self.threads[id] = object
+		self.threadstate(id, 'ready')
+		return id
+	
+	def threadstate(self, id, status = None):
+		if status == None:
+			return self.threadstatus[id]
+		else:
+			self.threadstatus[id] = status
+	
+	def getthread(self, query = None):
+		if query == None:
+			return self.threads
+		for k, v in self.threads.items():
+			if k == query:
+				return v
+			elif v == query:
+				return k
+		raise KeyError('Query: ' + str(query) + ' not found!')
+		
+	def makeque(self, id = None):
+		if id == None:
+			id = self.uid
+			self.uid += 1
+		else:
+			if self.queue.get(id, None) != None:
+				raise KeyError('Id: ' + str(id) + ' already exists')
+		self.queue[id] = Queue.Queue(maxsize=0)
+		return self.queue[id]
+
+	def getqueue(self, query = None):
+		if query == None:
+			return self.queue
+		for k, v in self.queue.items():
+			if k == query:
+				return v
+			elif v == query:
+				return k	
+	
+	def makelock(self, id=None):
+		if id == None:
+			id = self.uid
+			self.uid +=1
+		else:
+			self.checkid(self.locks,id)
+		self.locks[id] =threading.Lock()
+	
+	def getlock(self, query = None):
+		if query == None:
+			return self.locks
+		for k, v in self.locks.items():
+			if k == query:
+				return v
+			elif v == query:
+				return k
+	def addid(self, id):
+		self.autoids.append(id)
+	
+	def addobj(self, id, obj):
+		self.autoobjs[id] = obj
+	
+#-----------------------------------------		
+		
 class update(threading.Thread):
-	def __init__( self, version, lockobj):
-		self.lockobj = lockobj
+	def __init__( self, version):
 		self.version = version
 		threading.Thread.__init__ ( self )
 	def run(self):
 		version = self.version
-		lock = self.lockobj
+		lock = _conf.getlock('server')
 		print 'Waiting for Lock'
 		lock.acquire()
 		print 'Lock acquired....',
@@ -46,35 +172,31 @@ class update(threading.Thread):
 		print 'Updated!'
 
 class servercontrol(threading.Thread):
-	def __init__( self, oper, config, lockobj, eventobj):
-		self.oper = oper
-		self.lockobj = lockobj
-		self.eventobj = eventobj
-		self.config = config
+	def __init__( self):
+		self.oper = _conf.getqueue('server')
+		self.lockobj = _conf.getlock('server')
+		self.config = _conf.getconf('Handle')
 		threading.Thread.__init__ ( self )
 	def run(self):
 		global serveraction
-		if self.config['bukkit'][-1:] != '/':
-			path = self.config['bukkit'] + '/craftbukkit.jar'
+		if self.config['path_to_bukkit'][-1:] != '/':
+			path = self.config['path_to_bukkit'] + '/craftbukkit.jar'
 		else:
-			path = self.config['bukkit'] + 'craftbukkit.jar'
-		startcmd = 'screen -dmS ' + self.config['screenbukkit'] +  ' java -Xmx' + str(self.config['startheap']) + 'M -Xms' + str(config['maxheap'])  + 'M -jar ' + str(path)
-		stopcmd = 'screen -S ' + self.config['screenbukkit'] + ' -p 0 -X stuff "`printf "stop\r"`"'
+			path = self.config['path_to_bukkit'] + 'craftbukkit.jar'
+		startcmd = 'screen -dmS ' + self.config['screen_bukkit'] +  ' java -Xmx' + str(self.config['start_heap']) + 'M -Xms' + str(self.config['max_heap'])  + 'M -jar ' + str(path)
+		stopcmd = 'screen -S ' + self.config['screen_bukkit'] + ' -p 0 -X stuff "`printf "stop\r"`"'
 		self.lockobj.acquire()
 		while True:
 			oper = self.oper.get()		
-			serveraction.clear()
 			if oper == 'start':
 				print 'Starting Server....',
-				os.chdir(config['bukkit'])
+				os.chdir(self.config['path_to_bukkit'])
 				os.system(startcmd)
-				os.chdir(config['origpath'])
+				os.chdir(self.config['original_path'])
 				print 'Started!'
-				serveraction.wait()
 			elif oper == 'stop':
 				#chatttimer('Server', 60)
 				os.system(stopcmd)
-				serveraction.wait()
 			elif oper =='restart':
 				#chattimer('Server Restart', 300)
 				print 'Stopping Server....'
@@ -84,7 +206,6 @@ class servercontrol(threading.Thread):
 				print 'Starting Server....'
 				os.system(startcmd)
 				print 'Server Started!'
-				serveraction.wait()
 			elif oper == 'release':
 				self.lockobj.release()
 				print 'Server lock released!'
@@ -96,25 +217,29 @@ class servercontrol(threading.Thread):
 class chattimer(threading.Thread):
 	def __init__( self, config):
 		self.config = config
+		self.config['screenbukkit'] = _conf.getconf('Handle','screen_bukkit')
+		self.config['chatlock'] = _conf.getlock('chat')
+		self.id = self.config['id']
 		threading.Thread.__init__ ( self )
 	def run(self):
-		x = self.config['interval']	
+		x = self.config['interval'] * 60
 		nextrun = time.time() + x
 		print self.config['message'] + ' at ' + time.strftime('%H:%M',time.localtime(nextrun))
 		while x > 360:
-			if self.config['cancel'].isSet():
+			if _conf.threadstate(self.id) == 'canceled':
 				print self.config['message'] + ' timer canceling'
+				serversay(self.config['message'] + ' canceling')
 				self.config['signal'].set()
-				return ''
+				return None
 			x = x - 10
 			time.sleep(10)
 		threshhold = 360		
 		while x <= 360 and x > 20:
-			if self.config['cancel'].isSet():
+			if _conf.threadstate(self.id) == 'canceled':
 				print self.config['message'] + ' timer canceling'
 				serversay(self.config['message'] + ' canceling')
 				self.config['signal'].set()
-				return ''
+				return None
 			if x > 60 and x <= threshhold:
 				self.config['chatlock'].acquire()
 				print self.config['message'] + ' in ' + str(x/60) + ' minutes'
@@ -133,19 +258,29 @@ class chattimer(threading.Thread):
 		print self.config['message'] + ' in 15 secs'
 		serversay(self.config['message'] + ' in 15 secs')
 		self.config['chatlock'].release()
+		if _conf.threadstate(self.id) == 'canceled':
+				print self.config['message'] + ' timer canceling'
+				serversay(self.config['message'] + ' canceling')
+				self.config['signal'].set()
+				return None
 		time.sleep(5)
 		self.config['chatlock'].acquire()
 		print self.config['message'] + ' in 10 secs'
 		serversay(self.config['message'] + ' in 10 secs')
 		self.config['chatlock'].release()
+		if _conf.threadstate(self.id) == 'canceled':
+				print self.config['message'] + ' timer canceling'
+				serversay(self.config['message'] + ' canceling')
+				self.config['signal'].set()
+				return None
 		time.sleep(5)
 		y = 5
 		while y > 0:
-			if self.config['cancel'].isSet():
-				self.config['signal'].set()
+			if _conf.threadstate(self.id) == 'canceled':
 				print self.config['message'] + ' timer canceling'
 				serversay(self.config['message'] + ' canceling')
-				return ''
+				self.config['signal'].set()
+				return None
 			self.config['chatlock'].acquire()
 			print self.config['message'] + ' in ' + str(y) + ' secs'
 			serversay(self.config['message'] + ' in ' + str(y) + ' secs')
@@ -153,146 +288,152 @@ class chattimer(threading.Thread):
 			time.sleep(1)
 			y = y-1
 		self.config['signal'].set()
+		
+	def cancel(self):
+		if _conf.threadstate(self.id) == 'canceled':
+			print self.config['message'] + ' timer canceling'
+			serversay(self.config['message'] + ' canceling')
+			self.config['signal'].set()
+			return True
 
 			
 class mapper(threading.Thread):
-	def __init__( self, event, objlock, locks):
-		self.event = event
-		self.locks = locks
-		self.objlock  = objlock
+	def __init__( self):
 		threading.Thread.__init__ ( self )
 	def run(self):
 		#Load config
+		self.setid()
 		config = {}
-		self.objlock.acquire()
-		configfile = ConfigParser.RawConfigParser()
-		configfile.read('handle.cfg')
-		config['interval'] = configfile.getint('Mapper','interval')
-		config['screenbukkit'] = configfile.get('Handle','screen_bukkit')
+		_conf.threadstate(self.id,'running')
+		config['interval'] = int(_conf.getconf('Mapper','interval'))
 		config['message'] = 'Server map'
 		config['signal'] = threading.Event()
-		config['cancel'] = self.event
-		config['chatlock'] = self.locks['chat']
+		config['id'] = self.id
 		#Create timer thread
 		timer = chattimer(config)
 		#start it
 		timer.start()
 		#wait for signal
 		config['signal'].wait()
-		if self.event.isSet():
-			self.objlock.release()
+		if _conf.threadstate(self.id) == 'canceled':
+			_conf.threadstate(self.id,'stopped')
 			print 'Mapper canceling'
 			return ''
 		updatewd()
-		self.locks['cwc'].acquire()
+		_conf.getlock('cwc').acquire()
 		print 'Mapping......',
 		time.sleep(5)
 		print 'Done!'
-		self.locks['cwc'].release()
-		self.objlock.release()
+		_conf.getlock('cwc').release()
+		_conf.threadstate(self.id,'stopped')
+	def setid(self):
+		self.id = _conf.getthread(self)
 		
 class backup(threading.Thread):
-	def __init__( self, event, objlock, locks):
-		self.event = event
-		self.locks = locks
-		self.objlock = objlock
+	def __init__( self):
 		threading.Thread.__init__ ( self )
 	def run(self):
 		#Load config
-		self.objlock.acquire()
+		self.setid()
+		_conf.threadstate(self.id,'running')
 		config = {}
-		configfile = ConfigParser.RawConfigParser()
-		configfile.read('handle.cfg')
-		config['interval'] = configfile.getint('Backup','interval')
+		config['interval'] = int(_conf.getconf('Backup','interval'))
 		config['signal'] = threading.Event()
-		config['cancel'] = self.event
-		config['chatlock'] = self.locks['chat']
+		config['id'] = self.id
 		config['message'] = 'Backup'
-		config['screenbukkit'] = configfile.get('Handle','screen_bukkit')
-		config['path'] = configfile.get('Handle','path_to_bukkit')
-		config['worlds'] = configfile.get('Handle','worlds')
+		config['path'] = _conf.getconf('Handle','path_to_bukkit')
+		config['worlds'] = _conf.getconf('Handle','worlds')
 		config['worlds'] = config['worlds'].strip()
 		timer = chattimer(config)
 		timer.start()
 		config['signal'].wait()
-		if self.event.isSet():
-			self.objlock.release()
-			print 'Backup cancelling'
+		if _conf.threadstate(self.id) == 'canceled':
+			_conf.threadstate(self.id,'stopped')
+			print 'Backup Canceled'
 			return ''
 		updatewd()
-		self.locks['cwc'].acquire()
+		_conf.getlock('cwc').acquire()
 		print 'Backing up......',
 		if os.path.exists(config['path'] + '/wd/') == False:
 			os.mkdir(config['path'] + '/wd')
 		for world in config['worlds']:
 			os.system('tar -cf ./backups/' + world + '/' + str(time.strftime('%b-%d-%H:%M')) + '.tar.gz' + config['path'] + world)
 		print 'Done!'
-		self.locks['cwc'].release()
-		self.objlock.release()
+		_conf.getlock('cwc').release()
+		_conf.threadstate(self.id, 'stopped')
+	def setid(self):
+		self.id = _conf.getthread(self)
 		
 class restarter(threading.Thread):
-	def __init__( self, event, objlock, locks):
-		self.event = event
-		self.locks = locks
-		self.objlock = objlock
+	def __init__( self):
 		threading.Thread.__init__ ( self )
 	def run(self):
-		self.objlock.acquire()
+		self.setid()
+		_conf.threadstate(self.id, 'running')
 		config = {}
 		configfile = ConfigParser.RawConfigParser()
 		configfile.read('handle.cfg')
-		config['interval'] = configfile.getint('Restart','interval')
+		config['interval'] = int(_conf.getconf('Restart','interval'))
 		config['signal'] = threading.Event()
-		config['cancel'] = self.event
+		config['id'] = self.id
 		config['message'] = 'Server restart'
-		config['screenbukkit'] = configfile.get('Handle','screen_bukkit')
-		config['chatlock'] = self.locks['chat']
+		config['screenbukkit'] = _conf.getconf('Handle','screen_bukkit')
 		timer = chattimer(config)
 		timer.start()
 		config['signal'].wait()
-		if self.event.isSet():
-			self.objlock.release()
-			print 'Restarter Canceling'
+		if _conf.threadstate(self.id) == 'canceled':
+			_conf.threadstate(self.id,'stopped')
+			print 'Restart Canceled'
 			return ''
-		serverque.put('restart')
-		serveraction.set()
-		objlock.release()
-		
+		_conf.getqueue('server').put('restart')
+		_conf.threadstate(self.id, 'stopped')
+	def setid(self):
+		self.id = _conf.getthread(self)
 		
 		
 		
 class scheduler(threading.Thread):
-	def __init__( self, locks, events, objs, config, queue):
-		self.locks = locks
-		self.events = events
-		self.objs = objs
-		self.config = config
-		self.queue = queue
-		
-
+	def __init__( self):
 		threading.Thread.__init__ ( self )
 	def run(self):
-		os.chdir(config['origpath'])
-		while config['serverstop'].isSet() !=True:
+		self.defaultthreads()
+		os.chdir(_conf.getconf('Handle','original_path'))
+		while _conf.exit == None:
 			x = 0
-			while x <= (len(self.objs)-1):
-				if self.locks[x].acquire(False):
-					self.locks[x].release()
-					thread = self.objs[x](self.events[x], self.locks[x], self.config['locks'])
+			for id in _conf.autoids:
+				if _conf.threadstate(id) == 'stopped':
+					thread = _conf.autoobjs[id]()
 					thread.start()
-				x = x + 1
-				
-		x = 0
+					
 		print 'Killing Threads.....'
-		config['serverque'].put('kill')
-		global serveraction
-		serveraction.set()
-		while x <= (len(self.objs)-1):
+		_conf.getqueue('server').put('kill')
+		x = 0
+		for id, o in _conf.getthread().items():
+			_conf.threadstate(id, 'canceled')
+			x += 1
+		while x > 0:
+			for id, o in _conf.getthread().items():
+				if _conf.threadstate(id) == 'stopped':
+					_conf.threadstate(id,'reviewed')
+					print 'Killed: ' + id
+					_conf.prune()
+					x = x - 1
+	
+		_conf.allclear.set()
+	def defaultthreads(self):
+		_conf.addid('auto_mapper')
+		_conf.addid('auto_backup')
+		_conf.addid('auto_restart')
+		
+		_conf.addobj('auto_mapper', globals()['mapper'])
+		_conf.addobj('auto_backup', globals()['backup'])
+		_conf.addobj('auto_restart', globals()['restarter'])
+		
+		for id in _conf.autoids:
+			thread = _conf.autoobjs[id]()
+			_conf.threadadd(thread,id)
+			thread.start()
 			
-			self.events[x].set()
-			self.locks[x].acquire()
-			x = x+1
-		config['allclear'].set()
 
 def getversion():
 	#Read from CraftBukkit Build RSS
@@ -301,25 +442,6 @@ def getversion():
 	version = bukkit.entries[0].link[-4:-1]
 	return version
 
-def loadconfig():
-	if os.path.exists('handle.cfg'):
-		#Parse Config File
-		config = {}
-		configfile = ConfigParser.RawConfigParser()
-		configfile.read('handle.cfg')
-		config['bukkit'] = configfile.get('Handle','path_to_bukkit')
-		config['startheap'] = configfile.getint('Handle','start_heap')
-		config['maxheap'] = configfile.getint('Handle','max_heap')
-		config['screenbukkit'] = configfile.get('Handle','screen_bukkit')
-		config['origpath'] = os.getcwd()
-		configfile.set('Handle','original_path',config['origpath'])
-		file = open('handle.cfg', 'wb')
-		configfile.write(file)
-		file.close()
-		return config
-	else:
-		print 'No config file found'
-		print 'Quitting......'
 
 def updatecheck(config):
 	version = getversion()
@@ -328,85 +450,37 @@ def updatecheck(config):
 	else:
 		return 0
 		
-def initschlocks(objs):
-	x = len(objs)
-	locks = []
-	while x >=0:
-		locks.append(threading.Lock()	)
-		x = x-1
-	print 'Done allocating locks'
-	return locks
-	
-def initserverlocks():
-	serverlocks = {}
-	serverlocks['server'] = threading.Lock()
-	serverlocks['cwc'] = threading.Lock()
-	serverlocks['world'] = threading.Lock()
-	serverlocks['chat'] = threading.Lock()
-	return serverlocks
-
-def initevents(objs):
-	x = len(objs)
-	events = []
-	while x >=0:
-		events.append(threading.Event())
-		x = x-1
-	print 'Done allocating events'
-	return events
-	
-def initobjs():
-	objs = []
-	#objs.append(globals()['mapper'])
-	objs.append(globals()['backup'])
-	objs.append(globals()['restarter'])
-	
-	print 'Done obtaining objects'
-	return objs
-def threadcreate(name):
-	threadid = globals()[name]
-	
 def updatewd():
-	configfile = ConfigParser.RawConfigParser()
-	configfile.read('handle.cfg')
-	path = configfile.get('Handle','path_to_bukkit')
-	worldconfig = configfile.get('Handle', 'worlds')
+	path = _conf.getconf('Handle','path_to_bukkit')
+	worldconfig = _conf.getconf('Handle','worlds')
 	worlds = worldconfig.split()
-	backuppath = configfile.get('Handle','original_path')
-	serverlocks['cwc'].acquire()
+	bacluppath = _conf.getconf('Handle','original_path')
+	_conf.getlock('cwc').acquire()
 	for world in worlds:
 		os.system('rsync -r -t -v ' + path + '/' + world + ' ./wd/ > ./wd/' + world + 'changes') 
-	serverlocks['cwc'].release()
+	_conf.getlock('cwc').release()
 	# rsync -r -t -v /minecraft/minesrv/world /minecraft/pigmap/ > /minecraft/pigmap/change'
 	#os.system('rsync -r ' + path + 'world/ .')
 
 def serversay(message):
-	configfile = ConfigParser.RawConfigParser()
-	configfile.read('handle.cfg')
-	screen = configfile.get('Handle','screen_bukkit')
+	screen = _conf.getconf('Handle','screen_bukkit')
 	os.system('screen -S ' + screen + ' -p 0 -X stuff "`printf "say ' + message + '\r"`"')
 	
-config = loadconfig()
-objs = initobjs()
-schedulerlocks = initschlocks(objs)
-global serverlocks
-serverlocks = initserverlocks()
-events = initevents(objs)
-serverstop = threading.Event()
-config['serverstop'] = serverstop
-global serveraction
-serveraction = threading.Event()
-config['locks'] = serverlocks
-config['allclear'] = threading.Event()
-config['schedque'] = Queue.Queue(maxsize=0)
-global serverque
-config['serverque'] = Queue.Queue(maxsize=0)
-serverque = config['serverque']
-config['serverque'].put_nowait('start')
-servercontroller = servercontrol(config['serverque'], config, serverlocks['server'], serverstop)
-scheduler = scheduler(schedulerlocks, events, objs, config, config['schedque'])
+#---------new conig--------------------
+global _conf
+_conf = database()	
+_conf.initserver()	
+
+_conf.getqueue('server').put_nowait('start')
+
+#------------------------------------------------------
+
+servercontroller = servercontrol()
+scheduler = scheduler()
 print 'Handle version 0.1'
 servercontroller.start()
 scheduler.start()
+
 test = raw_input()
-serverstop.set()
-config['allclear'].wait()
+_conf.cancel()
+_conf.allclear.wait()
