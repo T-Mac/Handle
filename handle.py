@@ -419,6 +419,7 @@ class scheduler(threading.Thread):
 					_conf.prune()
 					x = x - 1
 	
+	
 		_conf.allclear.set()
 	def defaultthreads(self):
 		_conf.addid('auto_mapper')
@@ -435,6 +436,31 @@ class scheduler(threading.Thread):
 			thread.start()
 			
 
+class terminal(threading.Thread):
+	def run(self):
+		self.prompt()
+	
+	
+	def prompt(self):
+		x = True
+		while x:
+			command = raw_input()
+			x = self.interpret(command)
+			
+	def interpret(self,command):
+		if command == 'exit':
+			_conf.cancel()
+			_conf.allclear.wait()
+			return False
+		elif command == 'start':
+			_conf.getqueue('server').put('start')
+		elif command == 'restart':
+			_conf.getqueue('server').put('restart')
+		elif command == 'sched':
+			print _conf.autoids
+		else:
+			print 'Invalid Command'
+		return True
 def getversion():
 	#Read from CraftBukkit Build RSS
 	bukkit = feedparser.parse('http://ci.bukkit.org/job/dev-CraftBukkit/rssAll')
@@ -480,7 +506,5 @@ scheduler = scheduler()
 print 'Handle version 0.1'
 servercontroller.start()
 scheduler.start()
-
-test = raw_input()
-_conf.cancel()
-_conf.allclear.wait()
+terminalinst = terminal()
+terminalinst.start()
