@@ -1,5 +1,6 @@
-from feedparser import parse
+#!/usr/bin/python
 import ConfigParser
+from feedparser import parse
 import threading
 import time
 import sys
@@ -11,6 +12,8 @@ import subprocess
 import shlex
 import datetime
 from optparse import OptionParser
+import daemon2			
+import pickle
 
 class runfunc(threading.Thread):
 	def __init__( self, func, lockobj):
@@ -47,11 +50,13 @@ class database:
 		self.stdout = None
 		self.gui = None
 		self.serverstatus = None	
-		
+		self.terminal = None
+		self.comm = None
 		
 	def initserver(self):
 		self.makeque('server')
 		self.makeque('scheduler')
+		self.makeque('comm')
 		self.makelock('server')
 		self.makelock('chat')
 		self.makelock('cwc')
@@ -154,6 +159,11 @@ class database:
 		if status == 'running' or status == 'stopped':
 			self.serverstatus = status
 			
+	def setterm(self,term):
+		self.terminal = term
+	
+	def setcomm(self, comm):
+		self.comm = comm
 	
 
 #---------------------------------------------------------------------------
@@ -417,9 +427,12 @@ class mapper(threading.Thread):
 		updatewd()
 		_conf.getlock('cwc').acquire()
 		_conf.gui.handlesay('Mapping......',2)
-		time.sleep(30)
+		if _conf.getconf('Mapper','script') != 'None':
+			os.system('./' + _conf.getconf('Mapper','script'))
+		else:
+			time.sleep(10)
 		_conf.gui.handlesay('Done!',1)
-		time.sleep(10)
+
 		_conf.getlock('cwc').release()
 		_conf.threads[self.id].setattr('state','stopped')
 	def setid(self):
@@ -566,16 +579,7 @@ class scheduler(threading.Thread):
 		for id, thread in _conf.threads.items():
 			thread.start()			
 
-class terminal(threading.Thread):
-	def run(self):
-		self.prompt()
-	
-	
-	def prompt(self):
-		x = True
-		while x:
-		
-			x = self.interpret(_conf.gui.input())
+class terminal:
 			
 	def interpret(self,command):
 		if command == 'exit':
@@ -626,7 +630,7 @@ class terminal(threading.Thread):
 					_conf.gui.handlesay('Avaliable jobs:')
 			else:
 				line = '[ '
-				for item, obj  in _conf.objects.items():
+				for item, obj  in _conf.threads.items():
 					line = line + item + ', '
 				line = line + ' ]'
 				_conf.gui.handlesay(line)
@@ -667,7 +671,7 @@ class terminal(threading.Thread):
 			else:	
 				_conf.gui.handlesay(command[7:] + ' Canceling....',2)
 				_conf.threads[command[7:]].setattr('state','canceled')
-				_conf.gui.info.erase()
+				_conf.comm.pack(0x04)
 		
 		elif command[:5] == 'pause':
 			try:
@@ -677,15 +681,17 @@ class terminal(threading.Thread):
 			else:
 				_conf.threads[command[6:]].setattr('state','paused')
 				_conf.gui.handlesay(command[6:] + ' Paused')
+				_conf.comm.pack(0x04)
 				
 		elif command[:7] == 'unpause':
 			try:
 				_conf.getthread(command[8:])
 			except KeyError:
-				_conf.gui.handlesay('[ERROR] ', + command[8:] + ": Job doesn't exist")
+				_conf.gui.handlesay('[ERROR] ' + command[8:] + ": Job doesn't exist")
 			else:
 				_conf.threads[command[8:]].setattr('state','running')
 				_conf.gui.handlesay(command[8:] + ' Unpaused')
+				_conf.comm.pack(0x04)
 		
 		elif command == 'jobs':
 			line = ' Avaliable Jobs: ['
@@ -706,54 +712,39 @@ class terminal(threading.Thread):
 		return True
 		
 class gui(threading.Thread):
-	def __init__(self,screen):
-		
-		self.screen = screen
-		self.screen.clear()
-		max = self.screen.getmaxyx()
-		self.text = self.screen.subwin(max[0]-3,0)
-		self.info = self.screen.subwin(max[0]-3,30,0,max[1]-30)
-		self.status = self.screen.subwin(max[0]-3,max[1]-30,0,0)
-		self.text.box()
-
-		self.info.box()
-		self.screen.refresh()
-		curses.echo()
-		self.clear = '                                                                                                                                                                                                  '
-		self.updatable = 0
-		self.max = self.status.getmaxyx()
+	def __init__(self):
 		self.screenarray = []
-		for x in range(self.max[0]-1):
+		for x in range(100):
 			self.screenarray.append('')
-		
-
-		
-		threading.Thread.__init__ ( self )
-
+		self.updatable = 0
+		self.srvinf = './tmp/serverout'
+		threading.Thread.__init__(self)
 	def run(self):
-		side = sidebar(self.info,self.screen)
-		side.start()
-		
-		while _conf.exit != 1:
+		if not os.path.exists(self.srvinf):
+			os.mkfifo(self.srvinf)
 			
+		pipeout = os.fdopen(os.open(self.srvinf, os.O_WRONLY),'w')
+		_conf.comm.setpipeout(pipeout)
+		while _conf.exit != 1:
+
 			if _conf.serverstatus == 'running':
 				try:
 					line = _conf.stdout.readline()
 				except (AttributeError,ValueError, IOError):
-					line = ''
+					pass
 				self.screenup(line.strip())
 		_conf.allclear.wait()
 		curses.endwin()
-		
-	def screenup(self,line, update = 0):
-		
+	
+	def screenup(self,line, update = 0):	
 		if update == 2:
 			self.updatable = 1
 			self.screenarray.append(line)
 			del self.screenarray[0]
 		elif update == 1:	
 			if self.updatable == 1:
-				self.screenarray[self.max[0]-2] = self.screenarray[self.max[0]-2] + line
+				print len(self.screenarray)
+				self.screenarray[len(self.screenarray)-2] = self.screenarray[len(self.screenarray)-2] + line
 			else:
 				self.screenarray.append(line)
 				del self.screenarray[0]
@@ -762,62 +753,95 @@ class gui(threading.Thread):
 			self.updatable = 0
 			self.screenarray.append(line)
 			del self.screenarray[0]
-		self.status.erase()
-		y = 0
-		for x in self.screenarray:
-			self.status.addnstr(y,0,self.clear,self.max[1])
-			self.status.addnstr(y,0,x,self.max[1])
-			y = y + 1
-		self.status.refresh()
 		
-	def input(self):
-		self.text.box()
-		self.text.addstr(1,1,'>')
-		command = self.text.getstr(1,2)
-		self.text.erase()
-		return command
-	
+		data = {'id':0x03, 'line':line,'updatable':update}
+		_conf.comm.pack(0x03,data)
+
+		
 	def handlesay(self,line,update = 0):
-		if update == 1 and self.updatable == 1:
-			compline = line
-		else:
-			compline = time.strftime("%H:%M:%S") + ' [HANDLE] ' + line
-		self.screenup(compline,update)
+		self.screenup(line,update)
+			
+			
+class comm(threading.Thread):
+
+	def __init__(self):
+		self.srvinf = './tmp/serverout'
+		self.srvoutf = './tmp/serverin'
+		self.pipeout = None
+
+		threading.Thread.__init__ ( self )
+		
+	def run(self):
+		while (True):
+			if not os.path.exists(self.srvoutf):
+				try:
+					os.mkfifo(self.srvoutf)
+				except OSError:
+					pass
+			self.pipein = os.fdopen(os.open(self.srvoutf, os.O_RDONLY),'r')
+
+			while(self.pipein):
+				try:
+					packet = pickle.load(self.pipein)
+					self.parse(packet)
+				except EOFError:
+					self.pipein = False
 	
-	def timers(self):
-		y = 1
-		for id, thread in _conf.threads.items():
-			if thread.nextrun != None and thread.runlvl != 'system' and thread.state != 'canceled':	
-				timerem = thread.nextrun
-				timerem = int(timerem - time.time())
-				if timerem < 0:
-					timerem = 0
-				
-				timerem = datetime.timedelta(seconds=timerem)
-				line = id + ': ' + str(timerem)
-				if thread.state == 'paused':
-					line = id + ': [PAUSED]'
-				self.info.addstr(y,1,line)
-				y = y+1
-		self.info.addstr(self.info.getmaxyx()[0]-2,2,'Handle version ' + _conf.getconf('Handle','version'))
-		self.info.box()
-		self.info.refresh()
+	def send(self, data):
+		try:
+			pickle.dump(data, self.pipeout)
+			self.pipeout.flush()
+		except IOError:
+			_conf.getqueue('comm').put_nowait(data)
+			
+	def pack(self, packetid, data = None):
+		if self.pipeout != None:
+			if packetid == 0x00:
+				data = {'id':0x01}
+			elif packetid == 0x03a:
+				data = {}
+				jobs = {}
+				for id, thread in _conf.threads.items():					
+					jobs[id] =  {'nextrun':thread.nextrun,'runlvl':thread.runlvl,'state':thread.state}
+				data['jobs'] = jobs	
+				data['id'] = 0x03
+			elif packetid == 0x03b:
+				data = {'id':0x03, 'item':2, 'screen':_conf.gui.screenarray}
+			elif packetid == 0x03c:
+				version = getversion()
+				data = {'id':0x03, 'item':3, 'version':version}
+			_conf.getqueue('comm').put_nowait(data)
+			
 
-
-class sidebar(threading.Thread):
-	def __init__(self,screen,screen2):
-		self.screen = screen
-		self.screen2 = screen2
+		
+	
+	def parse(self, packet):
+		id = packet['id']
+		if id == 0x00:
+			self.pack(0x00)		
+		elif id == 0x01:
+			if packet['item'] == 1:
+				self.pack(0x03a)
+			elif packet['item'] == 2:
+				self.pack(0x03b)
+			elif packet['id'] == 3:
+				self.pack(0x03c)
+		elif id == 0x02:
+			_conf.terminal.interpret(packet['command'])
+		
+	def setpipeout(self,pipe):
+		self.pipeout = pipe
+	
+class sender(threading.Thread):
+	def __init__( self):
+		self.queue = _conf.getqueue('comm')
 		threading.Thread.__init__ ( self )
 	def run(self):
-		x = 0
-		while _conf.exit != 1:
-			_conf.gui.timers()
-			x = x + 1
-			if x == 100:
-				_conf.gui.info.erase()
-			time.sleep(1)
-		
+		while True:
+			packet = self.queue.get()
+			_conf.comm.send(packet)
+	
+			
 def getversion():
 	#Read from CraftBukkit Build RSS
 	bukkit = feedparser.parse('http://ci.bukkit.org/job/dev-CraftBukkit/rssAll')
@@ -851,27 +875,38 @@ def serversay(message):
 	screen = _conf.getconf('Handle','screen_bukkit')
 	#os.system('screen -S ' + screen + ' -p 0 -X stuff "`printf "say ' + message + '\r"`"')
 	
-def startgui(screen):
-	guiid = globals()['gui'](screen)
+def startgui():
+	guiid = globals()['gui']()
 	_conf.setgui(guiid)
 	guiid.start()
 
-		
-#---------new config--------------------
-global _conf
-_conf = database()	
-_conf.initserver()	
+	
+def startup():	
 
-_conf.getqueue('server').put_nowait('start')
+	#---------new config--------------------
+	global _conf
+	_conf = database()	
+	_conf.initserver()	
+	print 'database started'
+	_conf.getqueue('server').put_nowait('start')
+	
+	#------------------------------------------------------
+	print 'database started'
+	network = comm()
+	
+	_conf.setcomm(network)
+	network.start()
+	sender().start()
+	print 'network started'
+	startgui()
+	print 'gui started'
+	servercontroller = servercontrol()
+	schedulerinst = scheduler()
+	_conf.gui.handlesay(_conf.getconf('Handle','version'))
+	servercontroller.start()
+	schedulerinst.start()
+	terminalinst = terminal()
+	_conf.setterm(terminalinst)
 
-#------------------------------------------------------
-
-prog = globals()['startgui']
-curses.wrapper(prog)
-servercontroller = servercontrol()
-scheduler = scheduler()
-_conf.gui.handlesay('Handle version 0.1')
-servercontroller.start()
-scheduler.start()
-terminalinst = terminal()
-terminalinst.start()
+#daemon2.createDaemon()
+startup()
