@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import curses
 import curses.wrapper
 import threading
@@ -8,6 +9,7 @@ import time
 import pickle
 import Queue
 import datetime
+import comm
 class database:
 	def __init__(self):
 		
@@ -29,57 +31,45 @@ class database:
 	
 	
 
-class comm(threading.Thread):
+class network(threading.Thread):
 	
 	def __init__(self):
-		self.srvoutf = './tmp/serverout'
-		self.srvinf = './tmp/serverin'
 		self.queue = Queue.Queue(maxsize=0)
-		if not os.path.exists(self.srvoutf):
-			os.mkfifo(self.srvoutf)
-		self.pipeout = os.fdopen(os.open(self.srvinf, os.O_WRONLY),'w')
-		self.pack(0x01, {'id':0x01, 'item':1})
+		self.net = comm.comm(self.queue,'client')
+		self.net.start()
 		
+
+		self.net.pack({'id':0x01, 'item':1})
+		self.net.pack({'id':0x01, 'item':2})
 		
-		if not os.path.exists(self.srvinf):
-			os.mkfifo(self.srvinf)
-		self.pipein = os.fdopen(os.open(self.srvoutf, os.O_RDONLY),'r')
+
 			
 		threading.Thread.__init__ ( self )
 		
 	def run(self):
 		while(True):
-			packet = pickle.load(self.pipein)
+			packet = self.queue.get()
 			self.parse(packet)
 			
 	
-	def send(self, data):
-		try:
-			_conf.gui.handlesay('Sending Packet: ' + str(data['id']))
-			pickle.dump(data, self.pipeout)
-			self.pipeout.flush()
-		except IOError:
-			_conf.gui.handlesay('Exception')
-			self.queue.put_nowait(data)
-	
-	def pack(self, packetid, data = None):
-		if packetid == 0x00:
-			data = {'id':0x00}
-		self.queue.put_nowait(data)
-			
-		
-		
-	
 	def parse(self, packet):
-		id = packet['id']
-		if id == 0x00:
-			self.send(0x00)		
-		elif id == 0x03:
-			_conf.gui.handlesay(packet['line'],packet['updatable'])
-		elif id == 0x04:
-			_conf.jobup(packet['jobs'])
-		elif id == 0x05:
-			_conf.gui.fullup(packet['screen'])
+		id = packet['id']	
+		if id == 0x03:
+			#ine = ''
+			#for item, obj in packet:
+			#	line = item + ':' + obj	+ ', '
+			#_conf.gui.handlesay(line)
+			if packet['item'] == 1:
+				
+				_conf.jobup(packet['jobs'])
+			elif packet['item'] == 2:
+				
+				_conf.gui.fullup(packet['screen'])
+			#elif packet['item'] == 3:
+				#Update Version
+			elif packet['item'] == 4:
+				
+				_conf.gui.handlesay(packet['line'],packet['updatable'])
 			
 			
 				
@@ -179,15 +169,12 @@ class gui(threading.Thread):
 		#self.info.addstr(self.info.getmaxyx()[0]-2,2,'Handle version ' + _conf.getconf('Handle','version'))
 		self.info.box()
 		self.info.refresh()
-	def fullup(screen):
-		self.screenarray = screen
-		self.status.erase()
-		y = 0
-		for x in self.screenarray:
-			self.status.addnstr(y,0,self.clear,self.max[1])
-			self.status.addnstr(y,0,x,self.max[1])
-			y = y + 1
-		self.status.refresh()
+	def fullup(self,screen):
+		x = 0
+		while x <= len(self.screenarray):
+			self.screenarray[x-1] = screen[x-1]
+			x = x+1
+		self.handlesay('Client Reconnected')
 
 class sidebar(threading.Thread):
 	def __init__(self,screen,screen2):
@@ -211,22 +198,10 @@ class terminal(threading.Thread):
 	def prompt(self):
 		x = True
 		while x:
-		
+			#command = raw_input()
 			command = _conf.gui.input()
-			_conf.comm.pack(0x02,{'id':0x02,'command':command})
+			_conf.comm.net.pack({'id':0x02,'command':command})
 			
-			
-class sender(threading.Thread):
-	def __init__( self):
-		self.queue = _conf.comm.queue
-		threading.Thread.__init__ ( self )
-	def run(self):
-		while True:
-			
-			packet = self.queue.get()
-			
-			_conf.comm.send(packet)
-		
 			
 	
 			
@@ -242,11 +217,10 @@ def startgui(screen):
 global _conf
 _conf = database()
 
-network = comm()
-_conf.setcomm(network)
+network1 = network()
+_conf.setcomm(network1)
 
 prog = globals()['startgui']
 curses.wrapper(prog)
-network.start()
-sender().start()
+network1.start()
 terminal().start()

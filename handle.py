@@ -14,6 +14,7 @@ import datetime
 from optparse import OptionParser
 import daemon2			
 import pickle
+import comm
 
 class runfunc(threading.Thread):
 	def __init__( self, func, lockobj):
@@ -671,7 +672,7 @@ class terminal:
 			else:	
 				_conf.gui.handlesay(command[7:] + ' Canceling....',2)
 				_conf.threads[command[7:]].setattr('state','canceled')
-				_conf.comm.pack(0x04)
+				_conf.comm.pack(0x03a)
 		
 		elif command[:5] == 'pause':
 			try:
@@ -681,7 +682,7 @@ class terminal:
 			else:
 				_conf.threads[command[6:]].setattr('state','paused')
 				_conf.gui.handlesay(command[6:] + ' Paused')
-				_conf.comm.pack(0x04)
+				_conf.comm.pack(0x3a)
 				
 		elif command[:7] == 'unpause':
 			try:
@@ -691,7 +692,7 @@ class terminal:
 			else:
 				_conf.threads[command[8:]].setattr('state','running')
 				_conf.gui.handlesay(command[8:] + ' Unpaused')
-				_conf.comm.pack(0x04)
+				_conf.comm.pack(0x03a)
 		
 		elif command == 'jobs':
 			line = ' Avaliable Jobs: ['
@@ -720,11 +721,6 @@ class gui(threading.Thread):
 		self.srvinf = './tmp/serverout'
 		threading.Thread.__init__(self)
 	def run(self):
-		if not os.path.exists(self.srvinf):
-			os.mkfifo(self.srvinf)
-			
-		pipeout = os.fdopen(os.open(self.srvinf, os.O_WRONLY),'w')
-		_conf.comm.setpipeout(pipeout)
 		while _conf.exit != 1:
 
 			if _conf.serverstatus == 'running':
@@ -734,7 +730,6 @@ class gui(threading.Thread):
 					pass
 				self.screenup(line.strip())
 		_conf.allclear.wait()
-		curses.endwin()
 	
 	def screenup(self,line, update = 0):	
 		if update == 2:
@@ -754,72 +749,46 @@ class gui(threading.Thread):
 			self.screenarray.append(line)
 			del self.screenarray[0]
 		
-		data = {'id':0x03, 'line':line,'updatable':update}
+		data = {'id':0x03, 'item':4, 'line':line,'updatable':update}
 		_conf.comm.pack(0x03,data)
 
 		
 	def handlesay(self,line,update = 0):
 		self.screenup(line,update)
-			
-			
-class comm(threading.Thread):
-
+class network(threading.Thread):
+	
 	def __init__(self):
-		self.srvinf = './tmp/serverout'
-		self.srvoutf = './tmp/serverin'
-		self.pipeout = None
-
+		self.queue = Queue.Queue(maxsize=0)
+		self.net = comm.comm(self.queue,'server')
+		self.net.start()			
 		threading.Thread.__init__ ( self )
 		
 	def run(self):
-		while (True):
-			if not os.path.exists(self.srvoutf):
-				try:
-					os.mkfifo(self.srvoutf)
-				except OSError:
-					pass
-			self.pipein = os.fdopen(os.open(self.srvoutf, os.O_RDONLY),'r')
-
-			while(self.pipein):
-				try:
-					packet = pickle.load(self.pipein)
-					self.parse(packet)
-				except EOFError:
-					self.pipein = False
-	
-	def send(self, data):
-		try:
-			pickle.dump(data, self.pipeout)
-			self.pipeout.flush()
-		except IOError:
-			_conf.getqueue('comm').put_nowait(data)
+		while(True):
+			packet = self.queue.get()
+			self.parse(packet)	
 			
 	def pack(self, packetid, data = None):
-		if self.pipeout != None:
-			if packetid == 0x00:
-				data = {'id':0x01}
-			elif packetid == 0x03a:
-				data = {}
-				jobs = {}
-				for id, thread in _conf.threads.items():					
-					jobs[id] =  {'nextrun':thread.nextrun,'runlvl':thread.runlvl,'state':thread.state}
-				data['jobs'] = jobs	
-				data['id'] = 0x03
-			elif packetid == 0x03b:
-				data = {'id':0x03, 'item':2, 'screen':_conf.gui.screenarray}
-			elif packetid == 0x03c:
-				version = getversion()
-				data = {'id':0x03, 'item':3, 'version':version}
-			_conf.getqueue('comm').put_nowait(data)
-			
-
-		
-	
+		if packetid == 0x00:
+			data = {'id':0x01}
+		elif packetid == 0x03a:
+			data = {}
+			jobs = {}
+			for id, thread in _conf.threads.items():					
+				jobs[id] =  {'nextrun':thread.nextrun,'runlvl':thread.runlvl,'state':thread.state}
+			data['jobs'] = jobs	
+			data['id'] = 0x03
+			data['item'] = 1
+		elif packetid == 0x03b:
+			data = {'id':0x03, 'item':2, 'screen':_conf.gui.screenarray}
+		elif packetid == 0x03c:
+			version = getversion()
+			data = {'id':0x03, 'item':3, 'version':version}
+		self.net.pack(data)
+					
 	def parse(self, packet):
 		id = packet['id']
-		if id == 0x00:
-			self.pack(0x00)		
-		elif id == 0x01:
+		if id == 0x01:
 			if packet['item'] == 1:
 				self.pack(0x03a)
 			elif packet['item'] == 2:
@@ -829,17 +798,8 @@ class comm(threading.Thread):
 		elif id == 0x02:
 			_conf.terminal.interpret(packet['command'])
 		
-	def setpipeout(self,pipe):
-		self.pipeout = pipe
 	
-class sender(threading.Thread):
-	def __init__( self):
-		self.queue = _conf.getqueue('comm')
-		threading.Thread.__init__ ( self )
-	def run(self):
-		while True:
-			packet = self.queue.get()
-			_conf.comm.send(packet)
+
 	
 			
 def getversion():
@@ -892,11 +852,10 @@ def startup():
 	
 	#------------------------------------------------------
 	print 'database started'
-	network = comm()
+	network1 = network()
 	
-	_conf.setcomm(network)
-	network.start()
-	sender().start()
+	_conf.setcomm(network1)
+	network1.start()
 	print 'network started'
 	startgui()
 	print 'gui started'
