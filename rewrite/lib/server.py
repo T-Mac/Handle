@@ -1,0 +1,43 @@
+import ConfigParser
+import shlex
+from select import select
+import subprocess
+import os
+
+class Bukkit:
+	def __init__(self, database):
+		self.database = database
+		if self.database.config['Handle']['path_to_bukkit'][-1:] != '/':
+			path = self.database.config['Handle']['path_to_bukkit'] + '/craftbukkit.jar'
+		else:
+			path = self.database.config['Handle']['path_to_bukkit'] + 'craftbukkit.jar'
+		startcmd = 'java -Xmx' + str(self.database.config['Handle']['start_heap']) + 'M -Xms' + str(self.database.config['Handle']['max_heap'])  + 'M -jar ' + str(path)
+		self.startcmd = shlex.split(startcmd)
+	
+	def startserver(self):
+		os.chdir(self.database.config['Handle']['path_to_bukkit'])
+		self.bukkit = subprocess.Popen(self.startcmd, shell=False, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
+		os.chdir(self.database.config['Handle']['original_path'])
+	def stopserver(self):
+		self.bukkit.stdin.write('stop\n')
+
+	def output(self):
+		select((self.bukkit.stdout,),(),())
+		return self.bukkit.stdout.readline()[:-2]
+	
+	def input(self,data):
+		self.bukkit.stdin.write(data + '\n')
+		
+class Database:
+	def loadconfig(self):
+		self.config = {}
+		configfile = ConfigParser.RawConfigParser()
+		configfile.read('handle.cfg')
+		sections = configfile.sections()
+		for section in sections:
+			options = configfile.options(section)
+			internal = {}
+			for option in options:
+				internal[option] = configfile.get(section,option)
+			self.config[section] = internal
+		self.config['Handle']['original_path'] = os.getcwd()
