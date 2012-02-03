@@ -7,7 +7,7 @@ class Gui:
 		self.stdscr = curses.initscr()
 
 		self.queue = Queue.Queue(maxsize=0)
-		self.Paint = Paint(self.stdscr, self.queue)
+		self.Paint = Paint(self.stdscr, self.queue, self)
 		self.initscreen()
 		
 	def initscreen(self):
@@ -19,9 +19,15 @@ class Gui:
 		
 	def exit(self):
 		curses.endwin()
-
+	
+	def resize(self, screensaver):
+		self.Paint.exit = True
+		self.Paint = Paint(self.stdscr, self.queue, self, screensaver)
+		self.initscreen()
+		
 class Paint(threading.Thread):
-	def __init__(self, stdscr, queue):
+	def __init__(self, stdscr, queue, gui, screensaver = None):
+		self.parentgui = gui
 		self.stdscr = stdscr
 		size = self.stdscr.getmaxyx()	
 		self.width = size[1]
@@ -31,8 +37,12 @@ class Paint(threading.Thread):
 		self.wininput = self.stdscr.subwin(self.height-2,0)
 		self.queue = queue
 		self.Log = Log(self.winlog)
+		if screensaver:
+			self.Log.screen = screensaver
 		self.wininput.nodelay(True)
 		self.Input = Input(self.wininput)
+		self.exit = False
+
 		threading.Thread.__init__(self)
 		
 	def initialpaint(self):
@@ -42,9 +52,10 @@ class Paint(threading.Thread):
 		self.winlog.refresh()
 		self.winstatus.refresh()
 		self.wininput.refresh()
-	
+
 	def run(self):
-		while True:
+		while not self.exit:
+
 			try:
 				item = self.queue.get_nowait()
 			except Queue.Empty:
@@ -52,8 +63,9 @@ class Paint(threading.Thread):
 			else:
 				self.parse(item)
 			code = self.wininput.getch()
-			
-			if not code == -1:
+			if code == 410:
+				self.queue.put({'type':'resize'})
+			elif not code == -1:
 				self.queue.put({'type':'log', 'line':str(code)})
 				x = self.Input.parsechar(code)
 				self.queue.put({'type':'input'})
@@ -66,7 +78,9 @@ class Paint(threading.Thread):
 			pass
 		elif item['type'] == 'input':
 			self.Input.paint()
-			
+		elif item['type'] == 'resize':
+			self.stdscr.erase()
+			self.parentgui.resize(self.Log.screen)
 	
 		
 	
@@ -78,20 +92,21 @@ class Log:
 			self.screen.append(' ')
 		self.window = window
 		self.height, self.width = self.window.getmaxyx()
+		self.wrapper = []
 
 	def addline(self, line):
-		if len(line) > (self.width-2):
-			sub1 = line[:self.width-2]
-			sub2 = line[self.width-2:]
-			lastspace = sub1.rfind(' ')
-			if not lastspace == -1:
-				sub1 = line[:lastspace]
-				sub2 = '     ' + line[lastspace:]
-				self.screen.append(sub1)
-				self.screen.pop(0)
-				self.addline(sub2)
+		#if len(line) > (self.width-2):
+		#	sub1 = line[:self.width-2]
+		#	sub2 = line[self.width-2:]
+		#	lastspace = sub1.rfind(' ')
+		#	if not lastspace == -1:
+		#		sub1 = line[:lastspace]
+		#		sub2 = '     ' + line[lastspace:]
+		#		self.screen.append(sub1)
+		#		self.screen.pop(0)
+		#		self.addline(sub2)
 			
-		else:
+		#else:
 			self.screen.append(line)
 			self.screen.pop(0)
 
@@ -103,12 +118,33 @@ class Log:
 		y = self.height - 2
 		x = len(display)-1
 		while x >= 0:
-			self.window.addstr(y,1,display[x])
+			wrappedline = self.wrapline(display[x])
+			for line in wrappedline:
+				self.window.addstr(y,1,line)
+		
+		
+			#self.window.addstr(y,1,display[x])
 			x = x-1
 			y = y-1
 		self.window.refresh()
-
+	def setsize(self):
+		self.height, self.width = self.window.getmaxyx()
 		
+	def wrapline(self, line):
+		wrapped = []
+		if len(line) > (self.width-2):
+			xline = line
+			while len(xline) > (self.width-2):
+				sub1 = xline[:self.width-2]
+				lastspace = sub1.rfind(' ')
+				if not lastspace == -1:
+					wrapped.append(xline[:lastspace])
+					xline = '     ' + xline[lastspace:]
+			wrapped.append(xline)
+		else:
+			wrapped.append(line)
+		return wrapped
+				
 class Input():
 	def __init__(self, window):
 		self.window = window
