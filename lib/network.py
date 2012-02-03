@@ -12,8 +12,9 @@ class Network:
 		self.exit = False
 		self.handle = handle
 		self.inter = Interpret(self.handle)
-		self.hand = pickle.dumps({'id':'handshake'})
-		self.reply = pickle.dumps({'id':'reply')}
+		self.pre = pickle.dumps({'id':'preamble'})
+		self.eol = pickle.dumps({'id':'eol')}
+		self.netlock = threading.Lock()
 		
 	def run(self):
 		while not self.exit:
@@ -27,12 +28,16 @@ class Network:
 					self.inter.parse(data)
 				else:
 					self.connected = False
+		self.conn.shutdown(SHUT_RDWR)
+		self.conn.close() 
 					
-					
-	def handshake(self):
-		data = self.sock.recv(1024)
-		packet = pickle.loads(data)
-		if packet['id'] == 'handshake':
+							
+	def sendData(self, packet):
+		self.netlock.acquire()
+		self.conn.send(self.pre)
+		self.conn.send(packet)
+		self.conn.send(self.eol)
+		self.netlock.release()
 
 				
 				
@@ -43,6 +48,10 @@ class Interpret:
 		
 	def parse(self, packet):
 		data = pickle.loads(packet)
+		if data['id'] == 'preamble':
+			self.handle.netlock.acquire()
+		if data['id'] == 'eol':
+			self.handle.netlock.release()
 		if data['id'] == 'update':
 			if data['item'] == 1:
 				#Job update
