@@ -5,21 +5,25 @@ import Queue
 import time
 import select
 import logging
+import os
 class Network:
-	def __init__(self, mode, stack):
+	def __init__(self, mode, stack, port):
 		
 		self.inq = Queue.Queue(maxsize=0)
 		self.outq = stack
 		self.closed = threading.Event()
+		self.port = port
 		if mode == 'client':
-			self.controller = Client(self.inq, self.outq, self.closed)	
-			logging.basicConfig(level=logging.DEBUG, filename='client.log', format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+			self.controller = Client(self.inq, self.outq, self.closed, self.port)	
+			logging.basicConfig(level=logging.DEBUG, filename='client.log', format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 		if mode == 'server':
-			self.controller = Server(self.inq, self.outq, self.closed)
-			logging.basicConfig(level=logging.DEBUG, filename='server.log', format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+			self.controller = Server(self.inq, self.outq, self.closed, self.port)
+			logging.basicConfig(level=logging.DEBUG, filename='server.log', format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 	def send(self, packet):
+		logging.debug('ffffffff')
+		print 'ggggggg'
 		self.inq.put(packet)
-		
+		logging.debug('put packet in queue')	
 	def start(self):
 		print 'starting'
 		self.controller.setup()
@@ -38,53 +42,61 @@ class Send(threading.Thread):
 		self.connected = connected
 		self.running = running
 		self.exit = False
+		self.logger = logging.getLogger('Send')
 		threading.Thread.__init__(self)
 		
 	def run(self):
-		logging.debug('Send thread started')
+		self.logger.debug('Send thread started')
 		self.running.acquire()
-		logging.debug('Semaphore acquired')
+		self.logger.debug('Semaphore acquired')
 		while not self.exit:
-			logging.debug('Waiting for connection....')
+			self.logger.debug('Waiting for connection....')
 			self.connected.wait(5)
 			if self.connected.isSet():
 				try:
-					item = self.queue.get_nowait()
+					item = self.queue.get(5)
 				except Queue.Empty:
 					pass
 				else:
-					logging.debug('Calling Send....')
+					self.logger.debug('Calling Send....')
+					self.logger.debug('packet:' + str(item))
 					self.send(item)
-		logging.debug('Exiting')
+		self.logger.debug('Exiting')
 		self.running.release()
-			
+
 	def send(self, packet):
-		logging.debug('Aquiring Lock')
-		#self.socklock.acquire()
-		logging.debug('Calling Connect')
-		self.connect()
-		logging.debug('Sending Packet')
-		self.socket.send(packet)
-		self.socket.send(pickle.dumps({'id':'eol'}))
-		logging.debug('Packet Sent')
-		#self.socklock.release()
-		logging.debug('Released Lock')
-	
+#		self.logger.debug('Aquiring Lock')
+#		self.socklock.acquire()
+#		self.logger.debug('Calling Connect')
+#		self.connect()
+#		self.logger.debug('Sending Packet')
+#		self.socket.send(pickle.dumps(packet))
+#		self.socket.send(pickle.dumps({'id':'eol'}))
+#		self.logger.debug('Packet Sent')
+#		self.socklock.release()
+#		self.logger.debug('Released Lock')
+		x = select.select((),(self.socket,),(),60)			
+		if len(x[1]) != 0:
+			self.logger.debug('sending.........')
+			self.socket.send(pickle.dumps(packet))
+		
 	def setsocket(self, sock):
-		logging.debug('Send Socket Set')
+		self.logger.debug('Send Socket Set')
 		self.socket = sock
 		
 	def connect(self):
-		logging.debug('COnnect Packet Sent')
+		self.logger.debug('COnnect Packet Sent')
 		self.socket.send(pickle.dumps({'id':'preamble'}))
-		logging.debug('Waiting for reply....')
+#		self.socklock.release()
+		self.logger.debug('Waiting for reply....')
 		self.response.wait()
-		logging.debug('Got Reply')
+#		self.socklock.acquire()
+		self.logger.debug('Got Reply')
 		self.response.clear()
 		
 		
 class Receive(threading.Thread):
-	def __init__(self, response, socklock, stack, connected, disconnected, running):
+	def __init__(self, response, socklock, stack, connected, disconnected, running, exitsig):
 		self.response = response
 		self.socklock = socklock
 		self.stack = stack
@@ -92,45 +104,49 @@ class Receive(threading.Thread):
 		self.disconnected = disconnected
 		self.running = running
 		self.exit = False
+		self.exitsig = exitsig
+		self.logger = logging.getLogger('Receive')
 		threading.Thread.__init__(self)
 		
 	def run(self):
-		logging.debug('Receive waiting for connection')
+		self.logger.debug('Receive waiting for connection')
 		self.running.acquire()
-		logging.debug('Recieve aquiring semaphore')
+		self.logger.debug('Recieve aquiring semaphore')
 		while not self.exit:
-			logging.debug('checking connection')
+			self.logger.debug('checking connection')
 			self.connected.wait(5)
 			if self.connected.isSet():
-				logging.debug('waiting for packet')
-				x = select.select((self.socket,),(),(),60)
+				self.logger.debug('waiting for packet')
+				x = select.select([self.socket,self.exitsig,],(),(),60)
 				if len(x[0]) != 0:
-					logging.debug('packet here...')
-					data = self.socket.recv(1024)
-					testdata = pickle.loads(data)
-					logging.debug('packet recieve' + str(testdata))
-					self.parse(data)
+					if x[0][0] == self.socket:
+						self.logger.debug('packet here...')
+						data = self.socket.recv(1024)
+						testdata = pickle.loads(data)
+						self.logger.debug('packet recieve' + str(testdata))
+						self.parse(data)
 				else:
 					self.connected.clear()
 					self.disconnected.set()
-		logging.debug('Receive Exiting')
+		self.logger.debug('Receive Exiting')
 		self.running.release()
-					
+
 	def parse(self, packet):
 		data = pickle.loads(packet)
 		if data['id'] == 'preamble':
-			logging.debug('receive preamble aquiribng lock')
-			#self.socklock.acquire()
-			logging.debug('got lock sending response')
+			self.logger.debug('receive preamble aquiribng lock')
+			self.socklock.acquire()
+			self.logger.debug('got lock sending response')
 			self.socket.send(pickle.dumps({'id':'accept'}))
-			logging.debug('response sent')
+			self.logger.debug('response sent')
 		if data['id'] == 'accept':
-			logging.debug('got accept seting response event')
+			self.logger.debug('got accept seting response event')
 			self.response.set()
 		if data['id'] == 'eol':
-			logging.debug('eol received releasing lock')
-			#self.socklock.release()
+			self.logger.debug('eol received releasing lock')
+		#	self.socklock.release()
 		if data['id'] == 'update':
+		#	self.socklock.release()
 			if data['item'] == 1:
 				#Job update
 				self.stack.put('network.job')
@@ -146,18 +162,21 @@ class Receive(threading.Thread):
 				self.stack.put('network.screen')
 				self.stack.put('network.version')
 		if data['id'] == 'input':
+		#	self.socklock.release()
 			self.stack.put('handle.command')
 		if data['id'] == 'test':
-			logging.debug('got test packet')
+		#	self.socklock.release()
+			self.logger.debug('got test packet')
 			self.stack.put(data['item'])
-	
+		#if data['id'] == 'keepalive':
+		#	self.socklock.release()
 	def setsocket(self, sock):
 		self.socket = sock
 
 class Server(threading.Thread):
-	def __init__(self, inq, outq, closed):
+	def __init__(self, inq, outq, closed, port):
 		self.host = ''
-		self.port = 50007
+		self.port = port
 		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.sock.bind((self.host, self.port))
 		self.connected = threading.Event()
@@ -168,14 +187,14 @@ class Server(threading.Thread):
 		self.inq = inq
 		self.outq = outq
 		self.closed = closed
-		
+		self.exitsig = os.pipe()
 		self.exit = False
 		threading.Thread.__init__(self)
 	
 	def setup(self):
 		logging.debug('Startup Initiated')
 		self.send = Send(self.response, self.socklock, self.inq, self.connected, self.running)
-		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running)
+		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running,os.fdopen(self.exitsig[0]))
 		self.keepalive = KeepAlive(self.socklock, self.connected, self.inq, self.running)
 		self.send.start()
 		self.receive.start()
@@ -207,6 +226,7 @@ class Server(threading.Thread):
 		self.send.exit = True
 		self.receive.exit = True
 		self.keepalive.exit = True
+		os.fdopen(self.exitsig[1]).write('blarg')
 		self.running.acquire(True)
 		logging.debug('sem 1 aquired')
 		self.running.acquire(True)
@@ -219,12 +239,11 @@ class Server(threading.Thread):
 		logging.debug('closed sockets')
 		self.closed.set()
 		logging.debug('set closed event')
-		
 
 class Client(threading.Thread):
-	def __init__(self, inq, outq, closed):
+	def __init__(self, inq, outq, closed, port):
 		self.host = '127.0.0.1'
-		self.port = 50007
+		self.port = port
 		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.connected = threading.Event()
 		self.disconnected = threading.Event()
@@ -235,6 +254,7 @@ class Client(threading.Thread):
 		self.outq = outq	
 		self.running = threading.Semaphore(3)
 		self.exit = False
+		self.exitsig = os.pipe()
 		threading.Thread.__init__(self)
 		
 	def run(self):
@@ -257,7 +277,7 @@ class Client(threading.Thread):
 	def setup(self):
 		logging.debug('Setup Started')
 		self.send = Send(self.response, self.socklock, self.inq, self.connected, self.running)
-		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running)
+		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running, os.fdopen(self.exitsig[0]))
 		self.send.setsocket(self.socket)
 		self.receive.setsocket(self.socket)
 		self.keepalive = KeepAlive(self.socklock, self.connected, self.inq, self.running)
@@ -271,6 +291,7 @@ class Client(threading.Thread):
 		self.send.exit = True
 		self.receive.exit = True
 		self.keepalive.exit = True
+		os.fdopen(self.exitsig[1]).write('blarg')
 		self.running.acquire(True)
 		logging.debug('acquired sem1')
 		self.running.acquire(True)
@@ -282,13 +303,13 @@ class Client(threading.Thread):
 		logging.debug('closed socket')
 		self.closed.set()
 		logging.debug('closed event set')
-	
+
 class KeepAlive(threading.Thread):
 	def __init__(self, socklock, connected, inq, running):
 		self.socklock = socklock
 		self.connected = connected
 		self.exit = False
-		self.packet = pickle.dumps({'id':'keepalive'})
+		self.packet = {'id':'keepalive'}
 		self.running = running
 		self.inq = inq
 		threading.Thread.__init__(self)
@@ -299,6 +320,7 @@ class KeepAlive(threading.Thread):
 			self.connected.wait(5)
 			if self.connected.isSet():
 				self.inq.put(self.packet)
+				time.sleep(15)
 		logging.debug('Keepalive exiting')
 		self.running.release()
 			
