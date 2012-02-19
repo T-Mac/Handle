@@ -1,0 +1,27 @@
+Handle Tasks Definitions
+--------------------------------------------------------------------------------------
+Handle - Commands pertaining to Handle itself
+
+handle.command						send a command the interpreter
+handle.exit 							begin shutdown
+handle.update							update the Handle code
+handle.checkup						check for handle update
+
+--------------------------------------------------------------------------------------
+Network - Commands pertaining to network communication to and from the UI
+
+network.job								a job update request from the client
+network.screen						a full screen update request from the client
+network.version						a Handle version update request from the client
+netowrk.lineup						a line update to the client from the server
+
+--------------------------------------------------------------------------------------
+Server - Commands Pertainging to the control of the Bukkit server
+
+server.start							start the bukkit server
+server.stop								stop the bukkit server
+server.restart						restart the bukkit server
+
+--------------------------------------------------------------------------------------
+
+
