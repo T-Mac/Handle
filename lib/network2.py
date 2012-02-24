@@ -170,6 +170,17 @@ class Receive(threading.Thread):
 			self.stack.put(data['item'])
 		#if data['id'] == 'keepalive':
 		#	self.socklock.release()
+		if data['id'] == 'clientup':
+			if self.data['itme'] == 'line':
+				self.stack.put({'id':'client.lineup', 'data':data['data']})
+			elif self.data['item'] == 'screen'
+				self.stack.put({'id':'client.screen', 'data':data['data']})
+			elif self.data['item'] == 'job':
+				self.stack.put({'id':'client.job', 'data':data['data']})
+			elif self.data['item'] == 'version':	
+				self.stack.put({'id':'client.version', 'data':data['data']})
+
+
 	def setsocket(self, sock):
 		self.socket = sock
 
@@ -324,10 +335,21 @@ class KeepAlive(threading.Thread):
 		logging.debug('Keepalive exiting')
 		self.running.release()
 			
-			
-			
-			
-			
+class Server2(threading.Thread):
+	def __init__(self, mode, port, inq, outq, closed):
+		self.mode = mode
+		self.port = port
+		self.inq = inq
+		self.outq = outq
+		self.closed = closed
+		if self.mode == 'client':
+			self.client_setup()
+		elif self.mode == 'server':
+			self.server_setup()	
+		
+	def client_setup(self):
+		self.host = '127.0.0.1'
+		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		
 					
 		

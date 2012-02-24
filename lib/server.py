@@ -3,6 +3,7 @@ import shlex
 from select import select
 import subprocess
 import os
+import threading
 
 class Bukkit:
 	def __init__(self, database):
@@ -41,3 +42,15 @@ class Database:
 				internal[option] = configfile.get(section,option)
 			self.config[section] = internal
 		self.config['Handle']['original_path'] = os.getcwd()
+
+class Serverout(threading.Thread):
+	def __init__(self, Handle):
+			self.handle = Handle
+			self.exit = False
+			threading.Thread.__init__(self)
+
+	def run(self):
+		while not self.exit:
+			output = 	self.handle.comp['bukkit'].server.output()
+			self.handle.addtask({'id':'network.lineup', 'data':output})
+
