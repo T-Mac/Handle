@@ -3,14 +3,14 @@ Handle Tasks Definitions
 Handle - Commands pertaining to Handle itself
 
 handle.command						send a command the interpreter
-handle.exit 							begin shutdown
-handle.update							update the Handle code
+handle.exit 						begin shutdown
+handle.update						update the Handle code
 handle.checkup						check for handle update
 
 --------------------------------------------------------------------------------------
 Network - Commands pertaining to network communication to and from the UI
 
-network.job								a job update request from the client
+network.job							a job update request from the client
 network.screen						a full screen update request from the client
 network.version						a Handle version update request from the client
 netowrk.lineup						a line update to the client from the server
