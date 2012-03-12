@@ -3,11 +3,12 @@ import threading
 import Queue
 
 class Gui:
-	def __init__(self):
+	def __init__(self, client = None):
 		self.stdscr = curses.initscr()
 
 		self.queue = Queue.Queue(maxsize=0)
 		self.Paint = Paint(self.stdscr, self.queue, self)
+		self.client = client
 		self.initscreen()
 		
 	def initscreen(self):
@@ -24,6 +25,14 @@ class Gui:
 		self.Paint.exit = True
 		self.Paint = Paint(self.stdscr, self.queue, self, screensaver)
 		self.initscreen()
+		
+	def outputcommand(self, command):
+		if self.client == None:
+			self.addline(command)
+		else:
+			self.addline('[HANDLE] ' + command)
+			self.client.addtask({'id':'client.command', 'data':command})
+		
 		
 class Paint(threading.Thread):
 	def __init__(self, stdscr, queue, gui, screensaver = None):
@@ -65,8 +74,13 @@ class Paint(threading.Thread):
 			code = self.wininput.getch()
 			if code == 410:
 				self.queue.put({'type':'resize'})
+			elif code == 10:
+				if len(self.Input.command) > 0:
+					self.parentgui.outputcommand(self.Input.send())
+					self.queue.put({'type':'input'})
+
 			elif not code == -1:
-				self.queue.put({'type':'log', 'line':str(code)})
+				#self.queue.put({'type':'log', 'line':str(code)})
 				x = self.Input.parsechar(code)
 				self.queue.put({'type':'input'})
 		
@@ -165,6 +179,11 @@ class Input():
 		self.window.border(0,0,' ',0,4194424,4194424,0,0)
 		self.window.addstr(0,1,'> ' + self.command)
 		self.window.refresh()
+	
+	def send(self):
+		x = self.command
+		self.command = ''
+		return x
 
 
 		

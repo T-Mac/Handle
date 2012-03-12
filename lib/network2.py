@@ -21,13 +21,13 @@ class Network:
 			logging.basicConfig(level=logging.DEBUG, filename='server.log', format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 	def send(self, packet):
 		logging.debug('ffffffff')
-		print 'ggggggg'
+		#print 'ggggggg'
 		self.inq.put(packet)
 		logging.debug('put packet in queue')	
 	def start(self):
-		print 'starting'
+		#print 'starting'
 		self.controller.setup()
-		print 'setup finished'
+		#print 'setup finished'
 		self.controller.start()
 	
 	def exit(self):
@@ -163,7 +163,7 @@ class Receive(threading.Thread):
 				self.stack.put('network.version')
 		if data['id'] == 'input':
 		#	self.socklock.release()
-			self.stack.put('handle.command')
+			self.stack.put({'id':'handle.command', 'data':data['data']})
 		if data['id'] == 'test':
 		#	self.socklock.release()
 			self.logger.debug('got test packet')
@@ -171,9 +171,9 @@ class Receive(threading.Thread):
 		#if data['id'] == 'keepalive':
 		#	self.socklock.release()
 		if data['id'] == 'clientup':
-			if self.data['itme'] == 'line':
+			if self.data['item'] == 'line':
 				self.stack.put({'id':'client.lineup', 'data':data['data']})
-			elif self.data['item'] == 'screen'
+			elif self.data['item'] == 'screen':
 				self.stack.put({'id':'client.screen', 'data':data['data']})
 			elif self.data['item'] == 'job':
 				self.stack.put({'id':'client.job', 'data':data['data']})
@@ -205,8 +205,8 @@ class Server(threading.Thread):
 	def setup(self):
 		logging.debug('Startup Initiated')
 		self.send = Send(self.response, self.socklock, self.inq, self.connected, self.running)
-		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running,os.fdopen(self.exitsig[0]))
-		self.keepalive = KeepAlive(self.socklock, self.connected, self.inq, self.running)
+		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running,self.exitsig[0])
+		self.keepalive = KeepAlive(self.socklock, self.connected, self.inq, self.running, self.exitsig[0])
 		self.send.start()
 		self.receive.start()
 		self.keepalive.start()
@@ -233,11 +233,11 @@ class Server(threading.Thread):
 		self.shutdown()
 
 	def shutdown(self):
-		print 'exiting'
+		#print 'exiting'
 		self.send.exit = True
 		self.receive.exit = True
 		self.keepalive.exit = True
-		os.fdopen(self.exitsig[1]).write('blarg')
+		os.write(self.exitsig[1], 'exit')
 		self.running.acquire(True)
 		logging.debug('sem 1 aquired')
 		self.running.acquire(True)
@@ -288,10 +288,10 @@ class Client(threading.Thread):
 	def setup(self):
 		logging.debug('Setup Started')
 		self.send = Send(self.response, self.socklock, self.inq, self.connected, self.running)
-		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running, os.fdopen(self.exitsig[0]))
+		self.receive = Receive(self.response, self.socklock, self.outq, self.connected, self.disconnected, self.running, self.exitsig[0])
 		self.send.setsocket(self.socket)
 		self.receive.setsocket(self.socket)
-		self.keepalive = KeepAlive(self.socklock, self.connected, self.inq, self.running)
+		self.keepalive = KeepAlive(self.socklock, self.connected, self.inq, self.running, self.exitsig[0])
 		self.send.start()
 		self.receive.start()
 		self.keepalive.start()
@@ -302,7 +302,7 @@ class Client(threading.Thread):
 		self.send.exit = True
 		self.receive.exit = True
 		self.keepalive.exit = True
-		os.fdopen(self.exitsig[1]).write('blarg')
+		os.write(self.exitsig[1], 'exit')
 		self.running.acquire(True)
 		logging.debug('acquired sem1')
 		self.running.acquire(True)
@@ -316,13 +316,14 @@ class Client(threading.Thread):
 		logging.debug('closed event set')
 
 class KeepAlive(threading.Thread):
-	def __init__(self, socklock, connected, inq, running):
+	def __init__(self, socklock, connected, inq, running, exitsig):
 		self.socklock = socklock
 		self.connected = connected
 		self.exit = False
 		self.packet = {'id':'keepalive'}
 		self.running = running
 		self.inq = inq
+		self.exitsig = exitsig
 		threading.Thread.__init__(self)
 	def run(self):
 		self.running.acquire()
@@ -331,7 +332,7 @@ class KeepAlive(threading.Thread):
 			self.connected.wait(5)
 			if self.connected.isSet():
 				self.inq.put(self.packet)
-				time.sleep(15)
+				select((self.exitsig,),(),(),15)
 		logging.debug('Keepalive exiting')
 		self.running.release()
 			

@@ -23,5 +23,11 @@ server.stop								stop the bukkit server
 server.restart						restart the bukkit server
 
 --------------------------------------------------------------------------------------
+Client - Commands pertaining to tasks within the client
 
+client.lineup						prints a line to the ui
+client.command	`					input form the ui
+client.screen
+client.job
+client.version
 
