@@ -20,7 +20,8 @@ Server - Commands Pertainging to the control of the Bukkit server
 
 server.start							start the bukkit server
 server.stop								stop the bukkit server
-server.restart						restart the bukkit server
+server.restart							restart the bukkit server
+server.input							input to the server
 
 --------------------------------------------------------------------------------------
 Client - Commands pertaining to tasks within the client

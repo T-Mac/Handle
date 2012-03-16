@@ -4,9 +4,10 @@ from select import select
 import subprocess
 import os
 import threading
+import logging
 
 class Bukkit:
-	def __init__(self, database, handle):
+	def __init__(self, database, handle=None):
 		self.database = database
 		if self.database.config['Handle']['path_to_bukkit'][-1:] != '/':
 			path = self.database.config['Handle']['path_to_bukkit'] + '/craftbukkit.jar'
@@ -16,23 +17,39 @@ class Bukkit:
 		self.startcmd = shlex.split(startcmd)
 		self.pipe_read, self.pipe_write = os.pipe()
 		self.handle = handle
-		
+		logging.basicConfig(level=logging.DEBUG, filename='server.log', format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+		self.log = logging.getLogger('Bukkit')
+		self.running = False
 	def startserver(self):
-		self.serverout = ServerOut(self.handle)
+		self.running = True
+		if self.handle:
+			self.serverout = ServerOut(self.handle)
+		
+		self.log.debug('ServerOut Started')
 		os.chdir(self.database.config['Handle']['path_to_bukkit'])
 		self.bukkit = subprocess.Popen(self.startcmd, shell=False, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
 		os.chdir(self.database.config['Handle']['original_path'])
-		os.write(self.pipe_write, 'exit')
+		if self.handle: 
+			self.serverout.start()
 		
 	def stopserver(self):
+		self.running = False
 		self.bukkit.stdin.write('stop\n')
+		self.serverout.exit = True
+		os.write(self.pipe_write, 'exit')
+		
 
 	def output(self):
-		select((self.bukkit.stdout, self.pipe_read,),(),())
-		return self.bukkit.stdout.readline()[:-2]
+		x = select((self.bukkit.stdout, self.pipe_read,),(),())
+		if x[0][0] == self.bukkit.stdout:
+			return self.bukkit.stdout.readline()[11:-1]
+		else:
+			os.read(self.pipe_read, 1024)
+			return 0x00
 	
 	def input(self,data):
-		self.bukkit.stdin.write(data + '\n')
+		if self.running:
+			self.bukkit.stdin.write(data + '\n')
 		
 class Database:
 	def loadconfig(self):
@@ -57,6 +74,7 @@ class ServerOut(threading.Thread):
 	def run(self):
 		while not self.exit:
 		
-			output = self.handle.comp['bukkit'].server.output()
-			self.handle.addtask({'id':'network.lineup', 'data':output})
+			output = self.handle.comp['bukkit'].output()
+			if not output == 0x00:
+				self.handle.addtask({'id':'network.lineup', 'data':output})
 

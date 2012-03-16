@@ -1,10 +1,12 @@
 import curses
 import threading
 import Queue
+import math
 
 class Gui:
 	def __init__(self, client = None):
 		self.stdscr = curses.initscr()
+		curses.start_color()
 
 		self.queue = Queue.Queue(maxsize=0)
 		self.Paint = Paint(self.stdscr, self.queue, self)
@@ -48,8 +50,10 @@ class Paint(threading.Thread):
 		self.Log = Log(self.winlog)
 		if screensaver:
 			self.Log.screen = screensaver
+			self.Log.paint()
 		self.wininput.nodelay(True)
 		self.Input = Input(self.wininput)
+		self.Status = Status(self.winstatus)
 		self.exit = False
 
 		threading.Thread.__init__(self)
@@ -63,6 +67,7 @@ class Paint(threading.Thread):
 		self.wininput.refresh()
 
 	def run(self):
+		self.Status.draw()
 		while not self.exit:
 
 			try:
@@ -159,7 +164,7 @@ class Log:
 			wrapped.append(line)
 		return wrapped
 				
-class Input():
+class Input:
 	def __init__(self, window):
 		self.window = window
 		self.command = ''
@@ -184,6 +189,70 @@ class Input():
 		x = self.command
 		self.command = ''
 		return x
-
-
+	
+class Status:
+	def __init__(self, window):
+		self.window = window
+		self.height, self.width = self.window.getmaxyx()
+		self.page = 'sys'
+		self.sys = {}
+		self.sys['bukkitv'] = 0
+		self.sys['plimit'] = 0
+		self.sys['plugins'] = 0
+		self.sys['port'] = 0
+		self.sys['serverv'] = 0
+		self.sys['maxdsk'] = 0
+		self.sys['useddsk'] = 0
+		self.sys['maxmem'] = 0
+		self.sys['usemem'] = 0
+		
+	def draw(self):
+		self.topdraw()
+		if self.page == 'sys':
+			self.draw_sys()
+		
+	def topdraw(self):	
+		self.window.hline(2,0,curses.ACS_HLINE,29)
+		self.window.addstr(1,3,'SYS')
+		self.window.addch(1,7,curses.ACS_VLINE)
+		self.window.refresh()
+		
+	def draw_sys(self):
+		self.window.addstr(4,3,'Server Ver:')
+		self.window.addstr(5,3,'Bukkit Ver:')
+		self.window.addstr(6,3,'Handle Ver:')
+		self.window.addstr(7,3,'Port:')
+		x = 11
+		for letter in 'RAM':
+			self.window.addstr(x,4,letter)
+			x = x+1
+		self.draw_graph(11,6,float(10),float(6))
+		x = 11
+		for letter in 'DISK':
+			self.window.addstr(x,12,letter)
+			x = x+1
+		x = 11
+		for letter in 'PLAYERS':
+			self.window.addstr(x,20,letter)
+			x = x+1
+		self.window.refresh()
+		
+	def draw_graph(self, top, left, max, used):
+		height = (self.height-1)-top
+		percent = used/max
+		bottom = int(math.floor(height*percent))
+		for x in range(top,top+bottom):
+			self.window.addch(x,left,curses.ACS_VLINE)
+			self.window.addstr(x,left+1,' ',curses.color_pair(curses.COLOR_GREEN))
+			self.window.addstr(x,left+2,' ',curses.A_REVERSE)
+			self.window.addch(x,left+3,curses.ACS_VLINE)
+		self.window.addch(top+bottom,left,curses.ACS_LLCORNER)
+		self.window.addch(top+bottom,left+1,curses.ACS_HLINE)
+		self.window.addch(top+bottom,left+2,curses.ACS_HLINE)
+		self.window.addch(top+bottom,left+3,curses.ACS_LRCORNER)
+		self.window.addstr(top+bottom+1,left+1,str(int(percent*100)))
+		self.window.refresh()
+		
+		
+	
 		

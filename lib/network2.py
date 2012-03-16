@@ -149,18 +149,18 @@ class Receive(threading.Thread):
 		#	self.socklock.release()
 			if data['item'] == 1:
 				#Job update
-				self.stack.put('network.job')
+				self.stack.put({'id':'network.job'})
 			if data['item'] == 2:
 				#Full screen update
-				self.stack.put('network.screen')
+				self.stack.put({'id':'network.screen'})
 			if data['item'] == 3:
 				#version update
-				self.stack.put('network.version')
+				self.stack.put({'id':'network.version'})
 			if data['item'] == 4:
 				#Full update
-				self.stack.put('network.job')
-				self.stack.put('network.screen')
-				self.stack.put('network.version')
+				self.stack.put({'id':'network.job'})
+				self.stack.put({'id':'network.screen'})
+				self.stack.put({'id':'network.version'})
 		if data['id'] == 'input':
 		#	self.socklock.release()
 			self.stack.put({'id':'handle.command', 'data':data['data']})
@@ -171,13 +171,13 @@ class Receive(threading.Thread):
 		#if data['id'] == 'keepalive':
 		#	self.socklock.release()
 		if data['id'] == 'clientup':
-			if self.data['item'] == 'line':
+			if data['item'] == 'line':
 				self.stack.put({'id':'client.lineup', 'data':data['data']})
-			elif self.data['item'] == 'screen':
+			elif data['item'] == 'screen':
 				self.stack.put({'id':'client.screen', 'data':data['data']})
-			elif self.data['item'] == 'job':
+			elif data['item'] == 'job':
 				self.stack.put({'id':'client.job', 'data':data['data']})
-			elif self.data['item'] == 'version':	
+			elif data['item'] == 'version':	
 				self.stack.put({'id':'client.version', 'data':data['data']})
 
 
@@ -332,7 +332,7 @@ class KeepAlive(threading.Thread):
 			self.connected.wait(5)
 			if self.connected.isSet():
 				self.inq.put(self.packet)
-				select((self.exitsig,),(),(),15)
+				select.select((self.exitsig,),(),(),15)
 		logging.debug('Keepalive exiting')
 		self.running.release()
 			
