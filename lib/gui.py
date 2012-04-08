@@ -2,6 +2,7 @@ import curses
 import threading
 import Queue
 import math
+from task import Task
 
 class Gui:
 	def __init__(self, client = None):
@@ -27,13 +28,14 @@ class Gui:
 		self.Paint.exit = True
 		self.Paint = Paint(self.stdscr, self.queue, self, screensaver)
 		self.initscreen()
+		self.Paint.initialpaint()
 		
 	def outputcommand(self, command):
 		if self.client == None:
 			self.addline(command)
 		else:
 			self.addline('[HANDLE] ' + command)
-			self.client.addtask({'id':'client.command', 'data':command})
+			self.client.addtask(Task(Task.CLT_INPUT, command))
 		
 		
 class Paint(threading.Thread):
@@ -146,6 +148,7 @@ class Log:
 			x = x-1
 			y = y-1
 		self.window.refresh()
+		
 	def setsize(self):
 		self.height, self.width = self.window.getmaxyx()
 		
@@ -243,7 +246,7 @@ class Status:
 		bottom = int(math.floor(height*percent))
 		for x in range(top,top+bottom):
 			self.window.addch(x,left,curses.ACS_VLINE)
-			self.window.addstr(x,left+1,' ',curses.color_pair(curses.COLOR_GREEN))
+			self.window.addstr(x,left+1,' ',curses.color_pair(curses.A_REVERSE))
 			self.window.addstr(x,left+2,' ',curses.A_REVERSE)
 			self.window.addch(x,left+3,curses.ACS_VLINE)
 		self.window.addch(top+bottom,left,curses.ACS_LLCORNER)

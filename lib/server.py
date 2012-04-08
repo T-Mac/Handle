@@ -5,7 +5,7 @@ import subprocess
 import os
 import threading
 import logging
-
+from task import Task
 class Bukkit:
 	def __init__(self, database, handle=None):
 		self.database = database
@@ -76,5 +76,5 @@ class ServerOut(threading.Thread):
 		
 			output = self.handle.comp['bukkit'].output()
 			if not output == 0x00:
-				self.handle.addtask({'id':'network.lineup', 'data':output})
+				self.handle.addtask(Task(Task.NET_LINEUP, output))
 
