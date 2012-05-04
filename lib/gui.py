@@ -8,27 +8,30 @@ class Gui:
 	def __init__(self, client = None):
 		self.stdscr = curses.initscr()
 		curses.start_color()
-
+		
 		self.queue = Queue.Queue(maxsize=0)
 		self.Paint = Paint(self.stdscr, self.queue, self)
 		self.client = client
-		self.initscreen()
+		#self.initscreen()
 		
 	def initscreen(self):
-		self.Paint.initialpaint()
 		self.Paint.start()
+		self.Paint.queue.put({'type':'initial'})
+
 		
 	def addline(self, line):
 		self.queue.put({'type':'log', 'line':line})
 		
 	def exit(self):
+		self.Paint.join()
 		curses.endwin()
 	
 	def resize(self, screensaver):
+		#self.Paint.exit = True
 		self.Paint.exit = True
 		self.Paint = Paint(self.stdscr, self.queue, self, screensaver)
-		self.initscreen()
-		self.Paint.initialpaint()
+		self.Paint.start()
+		self.Paint.queue.put({'type':'initial'})
 		
 	def outputcommand(self, command):
 		if self.client == None:
@@ -61,14 +64,19 @@ class Paint(threading.Thread):
 		threading.Thread.__init__(self)
 		
 	def initialpaint(self):
+		self.winlog.erase()
 		self.winlog.border()
 		self.winstatus.border(' ',0,0,0,curses.ACS_HLINE,0,curses.ACS_HLINE,0)
 		self.wininput.border(0,0,' ',0,4194424,4194424,0,0)
 		self.winlog.refresh()
 		self.winstatus.refresh()
 		self.wininput.refresh()
+		self.Log.paint()
+		self.Input.paint()
+		self.Status.draw()
 
 	def run(self):
+		
 		self.Status.draw()
 		while not self.exit:
 
@@ -102,6 +110,12 @@ class Paint(threading.Thread):
 		elif item['type'] == 'resize':
 			self.stdscr.erase()
 			self.parentgui.resize(self.Log.screen)
+		elif item['type'] == 'initial':
+			self.initialpaint()
+			
+	def join(self):
+		self.exit = True
+		threading.Thread.join(self)
 	
 		
 	
@@ -154,17 +168,18 @@ class Log:
 		
 	def wrapline(self, line):
 		wrapped = []
-		if len(line) > (self.width-2):
-			xline = line
-			while len(xline) > (self.width-2):
-				sub1 = xline[:self.width-2]
-				lastspace = sub1.rfind(' ')
-				if not lastspace == -1:
-					wrapped.append(xline[:lastspace])
-					xline = '     ' + xline[lastspace:]
-			wrapped.append(xline)
-		else:
-			wrapped.append(line)
+		wrapped.append(line[:self.width-2])
+		#if len(line) > (self.width-2):
+		#	xline = line
+		#	while len(xline) > (self.width-2):
+		#		sub1 = xline[:self.width-2]
+		#		lastspace = sub1.rfind(' ')
+		#		if not lastspace == -1:
+		#			wrapped.append(xline[:lastspace])
+		#			xline = '     ' + xline[lastspace:]
+		#	wrapped.append(xline)
+		#else:
+		#	wrapped.append(line)
 		return wrapped
 				
 class Input:

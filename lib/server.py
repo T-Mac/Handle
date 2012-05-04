@@ -6,6 +6,7 @@ import os
 import threading
 import logging
 from task import Task
+
 class Bukkit:
 	def __init__(self, database, handle=None):
 		self.database = database
@@ -37,7 +38,8 @@ class Bukkit:
 		self.bukkit.stdin.write('stop\n')
 		self.serverout.exit = True
 		os.write(self.pipe_write, 'exit')
-		
+		if self.handle:
+			self.handle.addtask(Task(Task.NET_LINEUP, '[HANDLE] Server Closed'))
 
 	def output(self):
 		x = select((self.bukkit.stdout, self.pipe_read,),(),())
@@ -74,7 +76,7 @@ class ServerOut(threading.Thread):
 	def run(self):
 		while not self.exit:
 		
-			output = self.handle.comp['bukkit'].output()
+			output = self.handle.server.output()
 			if not output == 0x00:
 				self.handle.addtask(Task(Task.NET_LINEUP, output))
 

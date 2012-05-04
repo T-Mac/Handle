@@ -15,8 +15,10 @@ class Task(object):
 	CLT_UPDATE			data
 	CLT_INPUT			line
 	CLT_LINEUP			line
+	CLT_EXIT			None
+	CLT_CLOSE
 	'''
-	HDL_COMMAND, HDL_EXIT, HDL_UPDATE, HDL_CHECKUP, NET_JOB, NET_SCREEN, NET_VERSION, NET_LINEUP, SRV_START, SRV_STOP, SRV_RESTART, SRV_INPUT, CLT_UPDATE, CLT_INPUT, CLT_LINEUP  = range(15)
+	HDL_COMMAND, HDL_EXIT, HDL_UPDATE, HDL_CHECKUP, NET_JOB, NET_SCREEN, NET_VERSION, NET_LINEUP, SRV_START, SRV_STOP, SRV_RESTART, SRV_INPUT, CLT_UPDATE, CLT_INPUT, CLT_LINEUP, CLT_EXIT, CLT_CLOSE  = range(17)
 	stype = {
 		0:'HDL_COMMAND',
 		1:'HDL_EXIT',
@@ -32,10 +34,12 @@ class Task(object):
 		11:'SRV_INPUT',
 		12:'CLT_UPDATE',
 		13:'CLT_INPUT',
-		14:'CLT_LINEUP'
+		14:'CLT_LINEUP',
+		15:'CLT_EXIT',
+		16:'CLT_CLOSE'
 		}
 		
-	def __init__(self, type, data):	
+	def __init__(self, type, data=None):	
 		self.type = type
 		self.data = data
 		#self.types = self.stype['type']

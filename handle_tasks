@@ -2,33 +2,33 @@ Handle Tasks Definitions
 --------------------------------------------------------------------------------------
 Handle - Commands pertaining to Handle itself
 
-handle.command						send a command the interpreter
-handle.exit 						begin shutdown
-handle.update						update the Handle code
-handle.checkup						check for handle update
+HDL_COMMAND																send a command the interpreter
+HDL_EXIT																begin shutdown
+HDL_UPDATE																update the Handle code
+HDL_CHECKUP																check for Handle update
 
 --------------------------------------------------------------------------------------
 Network - Commands pertaining to network communication to and from the UI
 
-network.job							a job update request from the client
-network.screen						a full screen update request from the client
-network.version						a Handle version update request from the client
-netowrk.lineup						a line update to the client from the server
+NET_JOB																	a job update request from the client
+NET_SCREEN																a full screen update request from the client
+NET_VERSION																a Handle version update request from the client
+NET_LINEUP																a line update to the client from the server
 
 --------------------------------------------------------------------------------------
 Server - Commands Pertainging to the control of the Bukkit server
 
-server.start							start the bukkit server
-server.stop								stop the bukkit server
-server.restart							restart the bukkit server
-server.input							input to the server
+SRV_START																start the bukkit server
+SRV_STOP																stop the bukkit server
+SRV_RESTART																restart the bukkit server
+SRV_INPUT																input to the server
 
 --------------------------------------------------------------------------------------
 Client - Commands pertaining to tasks within the client
 
-client.lineup						prints a line to the ui
-client.command	`					input form the ui
-client.screen
-client.job
-client.version
-
+CLT_LINEUP																prints a line to the ui
+CLT_INPUT	`															input form the ui
+CLT_UPDATE																update various gui varibles																
+CLT_JOB
+CLT_VERSION
+CLT_EXIT																cause client to shutdown
