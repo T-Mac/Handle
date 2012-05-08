@@ -22,6 +22,7 @@ class Api(threading.Thread):
 			ApiCmd.UPDATE:self.__update_data,
 			ApiCmd.CONNECT:self.__connect,
 			ApiCmd.SETUP:self.__setup,
+			ApiCmd.DISCONNECT:self.__disconnect,
 			}
 		
 		threading.Thread.__init__(self)
@@ -68,6 +69,11 @@ class Api(threading.Thread):
 		self.connected.set()
 		self.log.debug('Api Connected to Server')
 		self.cmd_q.put(ApiCmd(ApiCmd.SETUP))
+	
+	def __disconnect(self, cmd):
+		self.connected.clear()
+		self.log.debug('Api Disconnected from server')
+		self.reply_q.put(Task(Task.SCH_REMOVE, Task.API_UPDATE))
 		
 	def __setup(self, cmd):
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getServerVersion', 600, 'bukkitv')))
@@ -78,6 +84,7 @@ class Api(threading.Thread):
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('system.getDiskUsage', 600, 'useddsk')))
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('system.getJavaMemoryTotal', 600, 'maxmem')))
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('system.getJavaMemoryUsage', 30, 'usemem')))
+		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getServerPort', 600, 'port')))
 		
 	def join(self):
 		self.alive.clear()
@@ -105,9 +112,10 @@ class ApiCmd(object):
 		UPDATE		ApiObj
 		CONNECT		None
 		SETUP		None
+		DISCONNECT	None
 	'''
 	
-	REGISTER, REMOVE, GET, UPDATE, CONNECT, SETUP = range(6)
+	REGISTER, REMOVE, GET, UPDATE, CONNECT, SETUP, DISCONNECT = range(7)
 	
 	stype = {
 		0:'REGISTER',
@@ -115,7 +123,8 @@ class ApiCmd(object):
 		2:'GET',
 		3:'UPDATE',
 		4:'CONNECT',
-		5:'SETUP'
+		5:'SETUP',
+		6:'DISCONNECT',
 		}
 	
 	def __init__(self, type, data = None):

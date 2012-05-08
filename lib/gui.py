@@ -69,6 +69,7 @@ class Paint(threading.Thread):
 		self.winlog = self.stdscr.subwin(self.height-2,self.width-30,0,0)
 		self.winstatus = self.stdscr.subwin(self.height-2,30,0,self.width-30)
 		self.wininput = self.stdscr.subwin(self.height-2,0)
+		self.wininput.keypad(1)
 		self.queue = queue
 		self.Log = Log(self.winlog)
 		if screensaver:
@@ -111,7 +112,16 @@ class Paint(threading.Thread):
 				if len(self.Input.command) > 0:
 					self.parentgui.outputcommand(self.Input.send())
 					self.queue.put({'type':'input'})
-
+					
+			elif code == curses.KEY_LEFT:
+				pass
+			elif code == curses.KEY_RIGHT:
+				pass
+			elif code == curses.KEY_UP:
+				self.Input.scrollup()
+			elif code == curses.KEY_DOWN:
+				self.Input.scrolldown()
+				
 			elif not code == -1:
 				#self.queue.put({'type':'log', 'line':str(code)})
 				x = self.Input.parsechar(code)
@@ -210,7 +220,9 @@ class Input:
 	def __init__(self, window):
 		self.window = window
 		self.command = ''
-		
+		self.scrollback = ['','','','','','','','','','','']
+		self.sbpos = 11
+		self.log = logging.getLogger('PAINT')
 	def parsechar(self, code):
 		if code >= 32 and code <= 126:
 			self.command = self.command + chr(code)
@@ -220,6 +232,9 @@ class Input:
 		elif code == 127:
 			self.command = self.command[:-1]
 			return code
+			
+		elif code == 263:
+			self.command = self.command[:-1]
 		
 	def paint(self):	
 		self.window.erase()
@@ -229,9 +244,32 @@ class Input:
 	
 	def send(self):
 		x = self.command
+		if len(self.scrollback) > 10:
+			self.scrollback.pop(0)
+		self.scrollback.append(x)
+		self.log.debug(str(self.scrollback))
+		self.sbpos = 11
 		self.command = ''
 		return x
 	
+	
+	def scrollup(self):
+		if self.sbpos > 0 :
+			#if self.sbpos == 11:
+			#	self.scrollback.append(self.command)
+			self.sbpos = self.sbpos - 1
+			self.command = self.scrollback[self.sbpos]
+			self.log.debug(self.scrollback[self.sbpos])
+			self.log.debug('Scrolled up to pos: %s' % str(self.sbpos))
+			self.paint()
+		
+	def scrolldown(self):
+		if self.sbpos < 11:
+			self.sbpos = self.sbpos + 1
+			self.command = self.scrollback[self.sbpos]
+			self.log.debug(self.scrollback[self.sbpos])
+			self.paint()
+			
 class Status:
 	def __init__(self, window):
 		self.window = window
@@ -249,6 +287,7 @@ class Status:
 		self.sys['maxmem'] = 1
 		self.sys['usemem'] = 0
 		self.sys['handlev'] = 0
+		self.sys['uptime'] = 0
 		
 	def draw(self):
 		self.topdraw()
@@ -262,14 +301,15 @@ class Status:
 		self.window.refresh()
 		
 	def draw_sys(self):
-		self.window.addstr(4,3,'Server Ver:')
-		self.window.addstr(4,15,str(self.sys['serverv']))
-		self.window.addstr(5,3,'Bukkit Ver:')
-		self.window.addstr(5,15,str(0))
-		self.window.addstr(6,3,'Handle Ver:')
-		self.window.addstr(6,15,str(self.sys['handlev']))
-		self.window.addstr(7,3,'Port:')
-		self.window.addstr(7,15,str(self.sys['port']))
+		self.window.addstr(4,3,'Handle Ver:')
+		self.window.addstr(4,15,str(self.sys['handlev']))
+		self.window.addstr(5,3,'Server Ver:')
+		self.window.addstr(5,15,str(self.sys['serverv']))
+		self.window.addstr(6,3,'Port:')
+		self.window.addstr(6,15,str(self.sys['port']))
+		#self.window.addstr(7,3,'Uptime:')
+		#self.window.addstr(7,15,str(self.sys['uptime']))
+		
 		x = 11
 		for letter in 'RAM':
 			self.window.addstr(x,4,letter)

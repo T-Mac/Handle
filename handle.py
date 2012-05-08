@@ -46,6 +46,9 @@ class Handle(threading.Thread):
 		#create api connection
 		self.api = api.Api(self.tasks)
 		
+		#create backup
+		self.backup = server.Backup(self.tasks)
+		
 		#put startup tasks
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SERVE,('',int(self.database.config['Handle']['port']))))
 		
@@ -73,6 +76,7 @@ class Handle(threading.Thread):
 					Task.API_UPDATE:self.__api_update,
 					Task.API_CONNECT:self.__api_connect,
 					Task.ON_CONNECT:self.__on_connect,
+					Task.SRV_BACKUP:self.__srv_backup,
 					}
 		#set alive flag
 		self.alive = threading.Event()
@@ -87,6 +91,7 @@ class Handle(threading.Thread):
 		self.network.start()
 		self.schedule.start()
 		self.api.start()
+		self.backup.start()
 		while self.alive.isSet():
 			try:
 				task = self.tasks.get(True, 0.1)
@@ -114,6 +119,9 @@ class Handle(threading.Thread):
 		time.sleep(1)
 		self.schedule.join()
 		pack = Packet(Packet.LINEUP,'[HANDLE] Schedule Stopped')
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.backup.join()
+		pack = Packet(Packet.LINEUP,'[HANDLE] Backup Stopped')
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
 		time.sleep(1)
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.EXIT, ('127.0.0.1',int(self.database.config['Handle']['port']) )))
@@ -161,10 +169,12 @@ class Handle(threading.Thread):
 	def __srv_start(self, task):
 		self.log.debug(':[H]Starting Server')
 		self.server.startserver()
-		self.tasks.put(Task(Task.SCH_ADD, (Task(Task.API_CONNECT), 15) ))
+		self.tasks.put(Task(Task.SCH_ADD, (Task(Task.API_CONNECT), 8) ))
+		
 		
 	def __srv_stop(self, task):
 		self.log.debug(':[H]Stopping Server')
+		self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
 		self.server.stopserver()
 		
 	def __srv_restart(self, task):
@@ -172,6 +182,11 @@ class Handle(threading.Thread):
 		
 	def __srv_input(self, task):
 		self.server.input(task.data)	
+		
+	def __srv_backup(self, task):
+		task.data = self.database.config
+		self.backup.cmd_q.put(task)
+		self.log.debug('[H] Added Backup to Q')
 		
 	def __clt_update(self, task):
 		pack = Packet(Packet.UPDATE,[task.data])
@@ -207,8 +222,18 @@ class Handle(threading.Thread):
 		
 	def __on_connect(self, task):
 		self.log.debug('ON_CONNECT RECEIVED')
-		pack = Packet(Packet.UPDATE, [('handlev',self.database.config['Handle']['version']),('port',self.database.config['Handle']['port'])])
+		pack = Packet(Packet.UPDATE, [('handlev',self.database.config['Handle']['version'])])
+		
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND, pack))
+		if self.database.data['screen'] == None:
+			self.database.data['screen'] = []
+		if len(self.database.data['screen']) == 100:
+			self.database.data['screen'].pop(0)
+		s = 'Connected to Handle ver. %s' % self.database.config['Handle']['version']
+		encodeds = s.encode('hex_codec')
+		self.database.data['screen'].append(encodeds)
+		pack = Packet(Packet.UPDATE,[('screen',self.database.data['screen'])])
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
 	
 	def interpret(self, command):
 		if command == 'start':
@@ -228,6 +253,9 @@ class Handle(threading.Thread):
 			self.tasks.put(Task(Task.API_REGISTER, ao))
 			self.tasks.put(Task(Task.API_UPDATE, ao))
 			self.tasks.put(Task(Task.NET_LINEUP, 'added test method'))
+			
+		elif command == 'backup':
+			self.tasks.put(Task(Task.SRV_BACKUP))
 	
 
 				
@@ -311,6 +339,7 @@ class Client(threading.Thread):
 		self.log.debug('Network COMPLETELY closed')
 		self.gui.exit()
 		self.alive.clear()
+
 	
 	def __clt_close(self, task):
 		self.log.debug('Disconnecting......')

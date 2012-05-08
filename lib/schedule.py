@@ -48,9 +48,13 @@ class Schedule(threading.Thread):
 		timer.start()
 		
 	def __remove(self, task):
-		self.events.remove(task.data)
-		task.data.timer.cancel()
-		#self.log.debug('Event Removed: %s, %s : %s' % task.data.id, str(task.data.delay), task.data.task.stype[task.data.task.type])
+		for event in self.events:
+			if event.task.type == task.data:
+				event.timer.cancel()
+				self.events.remove(event)
+		#self.events.remove(task.data)
+		#task.data.timer.cancel()
+			self.log.debug('Event Removed: %s, %s : %s' % (event.id, str(event.delay), event.task.stype[event.task.type]))
 		
 	def join(self):
 		for event in self.events:

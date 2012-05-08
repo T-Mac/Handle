@@ -151,8 +151,7 @@ class IO(threading.Thread):
 		self.connected.set()
 		self.log.debug('Connected')
 		self.fault_count = 0
-		pack = Packet(Packet.UPDATE)
-		self.cmd_q.put(NetworkCommand(NetworkCommand.SEND, pack))
+
 		
 		
 	def __handle_serve(self, cmd):
@@ -171,9 +170,6 @@ class IO(threading.Thread):
 		self.connected.set()
 		self.listening.clear()
 		self.fault_count = 0
-		self.log.debug('Injecting Fake Input Command')
-		pack = Packet(Packet.INPUT,'serve_welcome_packet' )
-		self.reply_q.put(NetworkCommand(NetworkCommand.RECEIVE,pack))
 		self.reply_q.put(NetworkCommand(NetworkCommand.TASK,Task(Task.ON_CONNECT)))
 
 		
