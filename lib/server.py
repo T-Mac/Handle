@@ -54,6 +54,10 @@ class Bukkit:
 			self.bukkit.stdin.write(data + '\n')
 		
 class Database:
+	def __init__(self):
+		self.data = {}
+		self.data['screen'] = None
+
 	def loadconfig(self):
 		self.config = {}
 		configfile = ConfigParser.RawConfigParser()

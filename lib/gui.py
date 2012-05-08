@@ -3,6 +3,7 @@ import threading
 import Queue
 import math
 from task import Task
+import logging
 
 class Gui:
 	def __init__(self, client = None):
@@ -12,6 +13,7 @@ class Gui:
 		self.queue = Queue.Queue(maxsize=0)
 		self.Paint = Paint(self.stdscr, self.queue, self)
 		self.client = client
+		self.log = logging.getLogger('GUI')
 		#self.initscreen()
 		
 	def initscreen(self):
@@ -39,7 +41,23 @@ class Gui:
 		else:
 			self.addline('[HANDLE] ' + command)
 			self.client.addtask(Task(Task.CLT_INPUT, command))
-		
+	
+	def update(self, items):
+		self.log.debug('Update Called')
+		for item in items:
+			self.log.debug('Got %s for update to %s'%(item[0], item[1]))
+			if item[0] == 'screen':
+				self.log.debug('caught screen update')
+				screendc = []
+				for line in item[1]:
+					#screendc.append(line.decode('hex_codec'))
+					self.Paint.queue.put({'type':'log','line':line.decode('hex_codec')})
+			else:
+				self.Paint.Status.sys[item[0]] = item[1]
+		self.Paint.queue.put({'type':'status'})
+		self.Paint.queue.put({'type':'initial'})
+		self.Paint.queue.put({'type':'screen','data':None})
+
 		
 class Paint(threading.Thread):
 	def __init__(self, stdscr, queue, gui, screensaver = None):
@@ -81,7 +99,7 @@ class Paint(threading.Thread):
 		while not self.exit:
 
 			try:
-				item = self.queue.get_nowait()
+				item = self.queue.get(True, 0.1)
 			except Queue.Empty:
 				pass
 			else:
@@ -104,7 +122,7 @@ class Paint(threading.Thread):
 			self.Log.addline(item['line'])
 			self.Log.paint()
 		elif item['type'] == 'status':
-			pass
+			self.Status.draw()
 		elif item['type'] == 'input':
 			self.Input.paint()
 		elif item['type'] == 'resize':
@@ -112,6 +130,12 @@ class Paint(threading.Thread):
 			self.parentgui.resize(self.Log.screen)
 		elif item['type'] == 'initial':
 			self.initialpaint()
+		elif item['type'] == 'screen':
+			if item['data'] == None:
+				self.Log.paint()
+			else:
+				self.Log.screen = item['data']
+				self.Log.paint()
 			
 	def join(self):
 		self.exit = True
@@ -215,14 +239,16 @@ class Status:
 		self.page = 'sys'
 		self.sys = {}
 		self.sys['bukkitv'] = 0
-		self.sys['plimit'] = 0
+		self.sys['plimit'] = 1
+		self.sys['pcount'] = 0
 		self.sys['plugins'] = 0
 		self.sys['port'] = 0
 		self.sys['serverv'] = 0
-		self.sys['maxdsk'] = 0
+		self.sys['maxdsk'] = 1
 		self.sys['useddsk'] = 0
-		self.sys['maxmem'] = 0
+		self.sys['maxmem'] = 1
 		self.sys['usemem'] = 0
+		self.sys['handlev'] = 0
 		
 	def draw(self):
 		self.topdraw()
@@ -237,38 +263,50 @@ class Status:
 		
 	def draw_sys(self):
 		self.window.addstr(4,3,'Server Ver:')
+		self.window.addstr(4,15,str(self.sys['serverv']))
 		self.window.addstr(5,3,'Bukkit Ver:')
+		self.window.addstr(5,15,str(0))
 		self.window.addstr(6,3,'Handle Ver:')
+		self.window.addstr(6,15,str(self.sys['handlev']))
 		self.window.addstr(7,3,'Port:')
+		self.window.addstr(7,15,str(self.sys['port']))
 		x = 11
 		for letter in 'RAM':
 			self.window.addstr(x,4,letter)
 			x = x+1
-		self.draw_graph(11,6,float(10),float(6))
+		self.draw_graph(11,6,float(self.sys['maxmem']),float(self.sys['usemem']))
 		x = 11
 		for letter in 'DISK':
 			self.window.addstr(x,12,letter)
 			x = x+1
+		self.draw_graph(11,14,float(self.sys['maxdsk']),float(self.sys['useddsk']))
 		x = 11
 		for letter in 'PLAYERS':
 			self.window.addstr(x,20,letter)
 			x = x+1
+		self.draw_graph(11,22,float(self.sys['plimit']),float(self.sys['pcount']))
 		self.window.refresh()
 		
 	def draw_graph(self, top, left, max, used):
-		height = (self.height-1)-top
+		height = (self.height-3)-top
 		percent = used/max
 		bottom = int(math.floor(height*percent))
-		for x in range(top,top+bottom):
+		rbottom = self.height-3
+		for x in range(top,rbottom):
 			self.window.addch(x,left,curses.ACS_VLINE)
-			self.window.addstr(x,left+1,' ',curses.color_pair(curses.A_REVERSE))
-			self.window.addstr(x,left+2,' ',curses.A_REVERSE)
 			self.window.addch(x,left+3,curses.ACS_VLINE)
-		self.window.addch(top+bottom,left,curses.ACS_LLCORNER)
-		self.window.addch(top+bottom,left+1,curses.ACS_HLINE)
-		self.window.addch(top+bottom,left+2,curses.ACS_HLINE)
-		self.window.addch(top+bottom,left+3,curses.ACS_LRCORNER)
-		self.window.addstr(top+bottom+1,left+1,str(int(percent*100)))
+		for x in range(top,top+bottom):
+			self.window.addstr(x,left+1,' ',curses.A_REVERSE)
+			self.window.addstr(x,left+2,' ',curses.A_REVERSE)
+		self.window.addch(rbottom,left,curses.ACS_LLCORNER)
+		self.window.addch(rbottom,left+1,curses.ACS_HLINE)
+		self.window.addch(rbottom,left+2,curses.ACS_HLINE)
+		self.window.addch(rbottom,left+3,curses.ACS_LRCORNER)
+		if int(percent*100) < 10:
+			self.window.addstr(rbottom+1,left+1,str(0))
+			self.window.addstr(rbottom+1,left+2,str(int(percent*100)))
+		else:
+			self.window.addstr(rbottom+1,left+1,str(int(percent*100)))
 		self.window.refresh()
 		
 		

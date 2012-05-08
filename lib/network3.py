@@ -116,6 +116,7 @@ class IO(threading.Thread):
 		self.conn = None
 		self.ready_to_exit = threading.Event()
 		self.fault_count = 0
+		self.sock = None
 		threading.Thread.__init__( self )
 		
 	def run(self):
@@ -150,14 +151,18 @@ class IO(threading.Thread):
 		self.connected.set()
 		self.log.debug('Connected')
 		self.fault_count = 0
+		pack = Packet(Packet.UPDATE)
+		self.cmd_q.put(NetworkCommand(NetworkCommand.SEND, pack))
+		
 		
 	def __handle_serve(self, cmd):
 		self.log.debug('SERVING......')
 		self.host, self.port = cmd.data
-		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.log.debug(self.host + ' : ' + str(self.port))
-		self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-		self.sock.bind(cmd.data)
+		if self.sock == None:
+			self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			self.log.debug(self.host + ' : ' + str(self.port))
+			self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+			self.sock.bind(cmd.data)
 		self.log.debug('Listening......')
 		self.listening.set()
 		self.sock.listen(0)
@@ -166,29 +171,40 @@ class IO(threading.Thread):
 		self.connected.set()
 		self.listening.clear()
 		self.fault_count = 0
+		self.log.debug('Injecting Fake Input Command')
+		pack = Packet(Packet.INPUT,'serve_welcome_packet' )
+		self.reply_q.put(NetworkCommand(NetworkCommand.RECEIVE,pack))
+		self.reply_q.put(NetworkCommand(NetworkCommand.TASK,Task(Task.ON_CONNECT)))
+
 		
 	def __handle_send(self, cmd):
 		self.log.debug('Sending.....')
 		if self.connected.isSet():
 			packet = pickle.dumps(cmd.data.dconstruct(),pickle.HIGHEST_PROTOCOL)
+			packetencode = packet.encode('hex_codec')
 			if self.conn:
-				self.conn.send(packet + '\n')
+				self.conn.send(packetencode + '\n')
 			else:
-				self.sock.send(packet + '\n')
+				self.sock.send(packetencode + '\n')
 		self.log.debug('Sent!')
 		
 	def __reply_receive(self, data):
 		try:
-			raw = pickle.loads(data)
+			packetdecode = data[:-1].decode('hex_codec')
+		except TypeError as e:
+			self.log.error('packet dump: %s' % data)
+
+		try:
+			raw = pickle.loads(packetdecode)
 		except EOFError as e:
-			self.log.error(str(e))
+			self.log.error('EOFError')
+			self.log.error('Pickled string dump: %s' % data)
 			self.fault_count = self.fault_count + 1
 			if self.fault_count > 25:
 				self.connected.clear()
 				if self.conn:
 					self.conn.shutdown(socket.SHUT_RDWR)
 					self.conn.close()
-					self.sock.close()
 					self.cmd_q.put(NetworkCommand(NetworkCommand.DISCONN,True))
 				
 		else:
@@ -213,17 +229,19 @@ class IO(threading.Thread):
 			if not self.fault_count > 25:
 				packetraw = Packet(Packet.CLOSED)
 				packet = pickle.dumps(packetraw.dconstruct(),pickle.HIGHEST_PROTOCOL)
-				self.conn.send( packet + '\n')
-				self.log.debug('packet send')
+				packetencode = packet.encode('hex_codec')
+				self.conn.send( packetencode + '\n')
+				self.log.debug('Sent Closed Packet MANUALY')
 				time.sleep(1)
 			self.connected.clear()
 			if not self.fault_count > 25:
 				self.conn.shutdown(socket.SHUT_RDWR)
 				self.conn.close()
-			self.sock.close()
+			
 			if cmd.data:
 				self.cmd_q.put(NetworkCommand(NetworkCommand.SERVE,(self.host, int(self.port))))
 			else:
+				self.sock.close()
 				self.ready_to_exit.set()
 		else:
 			self.cmd_q.put(NetworkCommand(NetworkCommand.SEND,Packet(Packet.DISCONN,True)))
@@ -258,7 +276,7 @@ class Parse(object):
 		self.reply_q.put(Task(Task.CLT_LINEUP, cmd.data))
 	
 	def __handle_update(self, cmd):
-		self.reply_q.put(Task(Task.CLT_UPDATE, cmd.data))
+		self.reply_q.put(Task(Task.NET_SCREEN, cmd.data))
 		
 	def __handle_input(self, cmd):
 		self.reply_q.put(Task(Task.HDL_COMMAND, cmd.data))
