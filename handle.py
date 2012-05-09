@@ -31,8 +31,9 @@ class Handle(threading.Thread):
 		
 
 		#create database
-		self.database = server.Database()
+		self.database = server.Database(self.tasks)
 		self.database.loadconfig()
+		self.database.create_default_events()
 		
 		#create sever controller
 		self.server = server.Bukkit(self.database, self)
@@ -167,18 +168,32 @@ class Handle(threading.Thread):
 		raise NotImplemented()
 	
 	def __srv_start(self, task):
-		self.log.debug(':[H]Starting Server')
-		self.server.startserver()
-		self.tasks.put(Task(Task.SCH_ADD, (Task(Task.API_CONNECT), 8) ))
-		
+		if not self.server.running:
+			self.log.debug(':[H]Starting Server')
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] Starting Server...'))
+			self.server.startserver()
+			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.API_CONNECT), 8) ))
+		else:	
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already running'))
+
 		
 	def __srv_stop(self, task):
-		self.log.debug(':[H]Stopping Server')
-		self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
-		self.server.stopserver()
+		if self.server.running:
+			self.log.debug(':[H]Stopping Server')
+			self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
+			self.server.stopserver()
+		else:
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already stopped'))
 		
 	def __srv_restart(self, task):
-		raise NotImplemented()
+		if self.server.running:
+			self.log.debug('Restarting Server')
+			self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
+			self.server.stopserver()
+			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.SRV_START), 10) ))
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] Server Stopped - Waiting 10 secs.....'))
+		else:	
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already running'))
 		
 	def __srv_input(self, task):
 		self.server.input(task.data)	
@@ -191,7 +206,7 @@ class Handle(threading.Thread):
 	def __clt_update(self, task):
 		pack = Packet(Packet.UPDATE,[task.data])
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
-		self.log.debug('[H] Sent Update: %s - %s'% task.data)
+		self.log.debug('[H] Sent Update: %s - %s'% (task.data[0][0], str(task.data[0][1])))
 		
 	def __sch_add(self, task):
 		self.schedule.cmd_q.put(SchedCommand(SchedCommand.ADD, task.data))
@@ -229,17 +244,25 @@ class Handle(threading.Thread):
 			self.database.data['screen'] = []
 		if len(self.database.data['screen']) == 100:
 			self.database.data['screen'].pop(0)
+			
 		s = 'Connected to Handle ver. %s' % self.database.config['Handle']['version']
 		encodeds = s.encode('hex_codec')
-		self.database.data['screen'].append(encodeds)
+		if not self.database.data['screen'][len(self.database.data['screen'])-1] == encodeds:
+			self.database.data['screen'].append(encodeds)
 		pack = Packet(Packet.UPDATE,[('screen',self.database.data['screen'])])
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
-	
+
+		pack = Packet(Packet.UPDATE,[('events',self.schedule.visible_events)])
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.api.cmd_q.put(ApiCmd(ApiCmd.RECONNECT))
+		
 	def interpret(self, command):
 		if command == 'start':
 			self.tasks.put(Task(Task.SRV_START))
 		elif command == 'stop':
 			self.tasks.put(Task(Task.SRV_STOP))
+		elif command == 'restart':
+			self.tasks.put(Task(Task.SRV_RESTART))
 		elif command == 'exit':
 			self.tasks.put(Task(Task.HDL_EXIT))
 		elif command == 'serve_welcome_packet':
@@ -260,14 +283,14 @@ class Handle(threading.Thread):
 
 				
 				
-class Client(threading.Thread):
+class Client(object):
 	def __init__(self):
-		threading.Thread.__init__(self)
+		#threading.Thread.__init__(self)
 		#create task q
 		self.tasks = Queue.Queue(maxsize=0)
 		print str(self)
 		#create database
-		self.database = server.Database()
+		self.database = server.Database(self.tasks)
 		self.database.loadconfig()
 		
 		#create networking
@@ -311,7 +334,7 @@ class Client(threading.Thread):
 			except Queue.Empty:
 				pass
 		
-	
+		return None
 	def addtask(self, task):
 		self.tasks.put(task)
 		
@@ -339,6 +362,7 @@ class Client(threading.Thread):
 		self.log.debug('Network COMPLETELY closed')
 		self.gui.exit()
 		self.alive.clear()
+		return None
 
 	
 	def __clt_close(self, task):
@@ -356,7 +380,7 @@ class Client(threading.Thread):
 if __name__ == "__main__":
 	if os.path.exists('./handle.pid'):
 		client = Client()
-		client.start()
+		client.run()
 	else:
 		lib.daemon.createDaemon()
 		srv= Handle()

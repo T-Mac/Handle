@@ -23,6 +23,7 @@ class Api(threading.Thread):
 			ApiCmd.CONNECT:self.__connect,
 			ApiCmd.SETUP:self.__setup,
 			ApiCmd.DISCONNECT:self.__disconnect,
+			ApiCmd.RECONNECT:self.__reconnect,
 			}
 		
 		threading.Thread.__init__(self)
@@ -85,6 +86,13 @@ class Api(threading.Thread):
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('system.getJavaMemoryTotal', 600, 'maxmem')))
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('system.getJavaMemoryUsage', 30, 'usemem')))
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getServerPort', 600, 'port')))
+		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getPlugins', 300, 'plugins')))
+		
+	def __reconnect(self, cmd):
+		self.log.debug('Got Reconnect Command')
+		for item in self.apiobjs:
+			self.cmd_q.put(ApiCmd(ApiCmd.UPDATE,item))
+			self.log.debug('Add Update for %s'%item.method)
 		
 	def join(self):
 		self.alive.clear()
@@ -113,9 +121,10 @@ class ApiCmd(object):
 		CONNECT		None
 		SETUP		None
 		DISCONNECT	None
+		RECONNECT	None
 	'''
 	
-	REGISTER, REMOVE, GET, UPDATE, CONNECT, SETUP, DISCONNECT = range(7)
+	REGISTER, REMOVE, GET, UPDATE, CONNECT, SETUP, DISCONNECT, RECONNECT = range(8)
 	
 	stype = {
 		0:'REGISTER',
@@ -125,6 +134,7 @@ class ApiCmd(object):
 		4:'CONNECT',
 		5:'SETUP',
 		6:'DISCONNECT',
+		7:'RECONNECT'
 		}
 	
 	def __init__(self, type, data = None):

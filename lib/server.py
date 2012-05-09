@@ -25,24 +25,28 @@ class Bukkit:
 		self.log = logging.getLogger('Bukkit')
 		self.running = False
 	def startserver(self):
-		self.running = True
-		if self.handle:
-			self.serverout = ServerOut(self.handle)
-		
-		self.log.debug('ServerOut Started')
-		os.chdir(self.database.config['Handle']['path_to_bukkit'])
-		self.bukkit = subprocess.Popen(self.startcmd, shell=False, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-		os.chdir(self.database.config['Handle']['original_path'])
-		if self.handle: 
-			self.serverout.start()
+		if not self.running:
+			self.running = True
+			if self.handle:
+				self.serverout = ServerOut(self.handle)
+			
+			self.log.debug('ServerOut Started')
+			os.chdir(self.database.config['Handle']['path_to_bukkit'])
+			self.bukkit = subprocess.Popen(self.startcmd, shell=False, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
+			os.chdir(self.database.config['Handle']['original_path'])
+			if self.handle: 
+				self.serverout.start()
 		
 	def stopserver(self):
-		self.running = False
-		self.bukkit.stdin.write('stop\n')
-		self.serverout.exit = True
-		os.write(self.pipe_write, 'exit')
-		if self.handle:
-			self.handle.addtask(Task(Task.NET_LINEUP, '[HANDLE] Server Closed'))
+		if self.running:
+			self.running = False
+			self.bukkit.stdin.write('stop\n')
+			self.serverout.exit = True
+			os.write(self.pipe_write, 'exit')
+			if self.handle:
+				self.handle.addtask(Task(Task.NET_LINEUP, '[HANDLE] Server Closed'))
+			
+
 
 	def output(self):
 		x = select((self.bukkit.stdout, self.pipe_read,),(),())
@@ -74,24 +78,37 @@ class Database:
 				internal[option] = configfile.get(section,option)
 			self.config[section] = internal
 		self.config['Handle']['original_path'] = os.getcwd()
+		
+		
+	def create_default_events(self):	
 		if self.config['Backup']['enabled'] == 'True':
 			tsk = Task(Task.SRV_BACKUP)
-			self.reply_q.put(Task(Task.SCH_ADD,(tsk, int(self.config['Backup']['interval']), True)))
+			self.reply_q.put(Task(Task.SCH_ADD,(tsk, int(self.config['Backup']['interval'])*60, True, 'Auto_Backup')))
+			curtime = time.time()
+			runtime = curtime+int(self.config['Backup']['interval'])*60
+			runtime = time.localtime(runtime)
+			self.reply_q.put(Task(Task.NET_LINEUP,'Server Backup at %s' % time.strftime('%H:%M:%S',runtime)))
 		if self.config['Restart']['enabled'] == 'True':
 			tsk = Task(Task.SRV_RESTART)
-			self.reply_q.put(Task(Task.SCH_ADD,(tsk, int(self.config['Restart']['interval']), True)))
+			self.reply_q.put(Task(Task.SCH_ADD,(tsk, int(self.config['Restart']['interval'])*60, True, 'Auto_Restart')))
+			Restart_Gen(self.reply_q, int(self.config['Restart']['interval'])*60)
+			curtime = time.time()
+			runtime = curtime+int(self.config['Restart']['interval'])*60
+			runtime = time.localtime(runtime)
+			self.reply_q.put(Task(Task.NET_LINEUP,'Server Restart at %s' % time.strftime('%H:%M:%S',runtime)))
 			
 def Restart_Gen(reply_q, time):
 	events = []
-	time/2 = halftime
-	if halftime > 15:
-		events.append[halftime]
-	halftime/2 = qtime
-	if qtime > 15:
-		events.append[qtime]
-	if time > 15:
-		events.append[10]
+	if time > 10:
+		events.append(10)
+	if time > 5:
+		events.append(5)
+	if time > 1:
+		events.append(1)
 	
+	for event in events:
+		tsk = Task(Task.NET_LINEUP,'Server Restart in %s min' % str(event*60))
+		reply_q.put(Task(Task.SCH_ADD, (tsk, (time-event)*60)))
 
 class ServerOut(threading.Thread):
 	def __init__(self, Handle):

@@ -4,6 +4,7 @@ import Queue
 import math
 from task import Task
 import logging
+import time
 
 class Gui:
 	def __init__(self, client = None):
@@ -52,6 +53,12 @@ class Gui:
 				for line in item[1]:
 					#screendc.append(line.decode('hex_codec'))
 					self.Paint.queue.put({'type':'log','line':line.decode('hex_codec')})
+			elif item[0] == 'events':
+				self.Paint.Status.hdl = item[1]
+				self.log.debug('Got Events: %s'% str(item[1]))
+			elif item[0] == 'plugins':
+				self.Paint.Status.bkt = item[1]
+				self.log.debug('Got Plugins for update')
 			else:
 				self.Paint.Status.sys[item[0]] = item[1]
 		self.Paint.queue.put({'type':'status'})
@@ -114,9 +121,23 @@ class Paint(threading.Thread):
 					self.queue.put({'type':'input'})
 					
 			elif code == curses.KEY_LEFT:
-				pass
+				if self.Status.page == 'nfo':
+					self.Status.page = 'bkt'
+				elif self.Status.page == 'bkt':
+					self.Status.page = 'hdl'
+				elif self.Status.page == 'hdl':
+					self.Status.page = 'sys'
+				self.queue.put({'type':'status'})
+				
 			elif code == curses.KEY_RIGHT:
-				pass
+				if self.Status.page == 'sys':
+					self.Status.page = 'hdl'
+				elif self.Status.page == 'hdl':
+					self.Status.page = 'bkt'
+				elif self.Status.page == 'bkt':
+					self.Status.page = 'nfo'
+				self.queue.put({'type':'status'})
+				
 			elif code == curses.KEY_UP:
 				self.Input.scrollup()
 			elif code == curses.KEY_DOWN:
@@ -288,16 +309,36 @@ class Status:
 		self.sys['usemem'] = 0
 		self.sys['handlev'] = 0
 		self.sys['uptime'] = 0
-		
+		self.hdl = []
+		self.bkt = []
+		self.nfo = []
 	def draw(self):
+		self.window.erase()
 		self.topdraw()
 		if self.page == 'sys':
 			self.draw_sys()
+		elif self.page == 'hdl':
+			self.draw_hdl()
+		elif self.page == 'bkt':
+			self.draw_bkt()
 		
 	def topdraw(self):	
 		self.window.hline(2,0,curses.ACS_HLINE,29)
-		self.window.addstr(1,3,'SYS')
-		self.window.addch(1,7,curses.ACS_VLINE)
+		self.window.addstr(1,4,'SYS')
+		self.window.addch(1,8,curses.ACS_VLINE)
+		self.window.addstr(1,10,'HDL')
+		self.window.addch(1,14,curses.ACS_VLINE)
+		self.window.addstr(1,16,'BKT')
+		self.window.addch(1,20,curses.ACS_VLINE)
+		self.window.addstr(1,22,'NFO')
+		if self.page == 'sys':
+			self.window.addstr(1,4,'SYS',curses.A_REVERSE)
+		elif self.page == 'hdl':
+			self.window.addstr(1,10,'HDL',curses.A_REVERSE)
+		elif self.page == 'bkt':
+			self.window.addstr(1,16,'BKT',curses.A_REVERSE)
+		elif self.page == 'nfo':
+			self.window.addstr(1,22,'NFO',curses.A_REVERSE)
 		self.window.refresh()
 		
 	def draw_sys(self):
@@ -326,7 +367,29 @@ class Status:
 			x = x+1
 		self.draw_graph(11,22,float(self.sys['plimit']),float(self.sys['pcount']))
 		self.window.refresh()
-		
+	
+	def draw_hdl(self):
+		self.window.addstr(4,7,'Scheduled Tasks', curses.A_UNDERLINE)
+		x = 6
+		for event in self.hdl:
+			self.window.addnstr(x,1,event[0],18)
+			time_str = time.strftime('%H:%M:%S',time.localtime(event[1]))
+			self.window.addstr(x,19,time_str)
+			x = x+1
+		self.window.refresh()
+
+	def draw_bkt(self):
+		self.window.addstr(4,8,'Bukkit Plugins', curses.A_UNDERLINE)
+		x = 6
+		for plugin in self.bkt:
+			self.window.addstr(x,0,'[ ]')
+			if plugin['enabled']:
+				self.window.addstr(x,1,'Y')
+			self.window.addstr(x,4,plugin['name'])
+			self.window.addstr(x,18,plugin['version'])
+			x = x+1
+		self.window.refresh()
+	
 	def draw_graph(self, top, left, max, used):
 		height = (self.height-3)-top
 		percent = used/max
