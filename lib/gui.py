@@ -5,12 +5,13 @@ import math
 from task import Task
 import logging
 import time
-
+import re
+import string
 class Gui:
 	def __init__(self, client = None):
 		self.stdscr = curses.initscr()
 		curses.start_color()
-		
+		curses.curs_set(0)
 		self.queue = Queue.Queue(maxsize=0)
 		self.Paint = Paint(self.stdscr, self.queue, self)
 		self.client = client
@@ -59,6 +60,15 @@ class Gui:
 			elif item[0] == 'plugins':
 				self.Paint.Status.bkt = item[1]
 				self.log.debug('Got Plugins for update')
+			elif item[0] == 'players':
+				if item[1]['action'] == 'disconnected':
+					for player in self.Paint.Status.nfo:
+						if player['name'] == item[1]['name'] and item[1]['action'] == 'disconnected':
+							self.Paint.Status.nfo.remove(player)
+				elif item[1]['action'] == 'connected':
+					self.Paint.Status.nfo.append(item[1])
+						
+	
 			else:
 				self.Paint.Status.sys[item[0]] = item[1]
 		self.Paint.queue.put({'type':'status'})
@@ -183,7 +193,7 @@ class Log:
 		self.window = window
 		self.height, self.width = self.window.getmaxyx()
 		self.wrapper = []
-
+		self.log = logging.getLogger('LOG')
 	def addline(self, line):
 		#if len(line) > (self.width-2):
 		#	sub1 = line[:self.width-2]
@@ -197,9 +207,18 @@ class Log:
 		#		self.addline(sub2)
 			
 		#else:
+			line = self.remove_escapes(line)
+			self.log.debug('Line after replacement: %s'%line)
 			self.screen.append(line)
 			self.screen.pop(0)
 
+	def remove_escapes(self, line):
+		escapes = ['[33m','[37m','[0m','[32m','[31m','[35m']
+		w = string.printable[:-5]
+		line = "".join(c for c in line if c in w)	
+		for code in escapes:
+			line = line.replace(code,'')
+		return line
 		
 	def paint(self):
 		self.window.erase()
@@ -321,6 +340,8 @@ class Status:
 			self.draw_hdl()
 		elif self.page == 'bkt':
 			self.draw_bkt()
+		elif self.page == 'nfo':
+			self.draw_nfo()
 		
 	def topdraw(self):	
 		self.window.hline(2,0,curses.ACS_HLINE,29)
@@ -331,6 +352,7 @@ class Status:
 		self.window.addstr(1,16,'BKT')
 		self.window.addch(1,20,curses.ACS_VLINE)
 		self.window.addstr(1,22,'NFO')
+		self.window.border(' ',0,0,0,curses.ACS_HLINE,0,curses.ACS_HLINE,0)
 		if self.page == 'sys':
 			self.window.addstr(1,4,'SYS',curses.A_REVERSE)
 		elif self.page == 'hdl':
@@ -365,7 +387,7 @@ class Status:
 		for letter in 'PLAYERS':
 			self.window.addstr(x,20,letter)
 			x = x+1
-		self.draw_graph(11,22,float(self.sys['plimit']),float(self.sys['pcount']))
+		self.draw_graph(11,22,float(self.sys['plimit']),float(len(self.nfo)))
 		self.window.refresh()
 	
 	def draw_hdl(self):
@@ -385,22 +407,35 @@ class Status:
 			self.window.addstr(x,0,'[ ]')
 			if plugin['enabled']:
 				self.window.addstr(x,1,'Y')
+			else:
+				self.window.addstr(x,1,'N')
 			self.window.addstr(x,4,plugin['name'])
 			self.window.addstr(x,18,plugin['version'])
 			x = x+1
 		self.window.refresh()
 	
+	def draw_nfo(self):
+		self.window.addstr(4,11,'Players', curses.A_UNDERLINE)
+		x = 6
+		for player in self.nfo:
+			self.window.addstr(x,1,player['name'])
+			time_str = time.strftime('%H:%M:%S',time.localtime(int(player['time'])))
+			self.window.addstr(x,19,time_str)
+			x = x+1
+		self.window.refresh()
 	def draw_graph(self, top, left, max, used):
 		height = (self.height-3)-top
 		percent = used/max
-		bottom = int(math.floor(height*percent))
+		fill = int(math.floor(height*percent))
+		blank_lines = (height-fill) + top
 		rbottom = self.height-3
+		
 		for x in range(top,rbottom):
 			self.window.addch(x,left,curses.ACS_VLINE)
 			self.window.addch(x,left+3,curses.ACS_VLINE)
-		for x in range(top,top+bottom):
-			self.window.addstr(x,left+1,' ',curses.A_REVERSE)
-			self.window.addstr(x,left+2,' ',curses.A_REVERSE)
+			if x > blank_lines:
+				self.window.addstr(x,left+1,' ',curses.A_REVERSE)
+				self.window.addstr(x,left+2,' ',curses.A_REVERSE)
 		self.window.addch(rbottom,left,curses.ACS_LLCORNER)
 		self.window.addch(rbottom,left+1,curses.ACS_HLINE)
 		self.window.addch(rbottom,left+2,curses.ACS_HLINE)

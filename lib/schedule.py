@@ -16,6 +16,7 @@ class Schedule(threading.Thread):
 		self.handlers = {
 			SchedCommand.ADD:self.__add,
 			SchedCommand.REMOVE:self.__remove,
+			SchedCommand.UPDATE:self.__update,
 			}
 		self.log = logging.getLogger('SCHEDULE')
 		threading.Thread.__init__(self)
@@ -95,6 +96,9 @@ class Schedule(threading.Thread):
 			self.log.debug('Repeat Flag: False - Deleting Event')
 		if event.visible:
 			self.reply_q.put(Task(Task.CLT_UPDATE,('events', self.visible_events)))
+			
+	def __update(self, task):
+		self.reply_q.put(Task(Task.CLT_UPDATE,('events', self.visible_events)))
 		
 class Event(object):
 	def __init__(self, task, delay, repeat=False):
@@ -113,12 +117,14 @@ class SchedCommand(object):
 	'''
 	ADD			(task, delay, [repeat])
 	REMOVE		id to stop
+	UPDATE		None
 	'''
-	ADD, REMOVE = range(2)
+	ADD, REMOVE, UPDATE = range(3)
 	
 	stype = {
 		0:'ADD',
 		1:'REMOVE',
+		2:'UPDATE',
 		}
 	
 

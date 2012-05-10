@@ -15,15 +15,19 @@ import os
 import lib.daemon
 import lib.apiconnect as api
 from lib.apiconnect import ApiCmd, ApiObj
-
+LOGLVL = logging.DEBUG
 class NotImplemented(Exception):
 	pass
 
 class Handle(threading.Thread):
 	def __init__(self):
 		#config logger
-		self.loglvl = logging.DEBUG		#<-------- LOGGING LEVEL
-		logging.basicConfig(level=self.loglvl, filename='server.log', format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+		self.loglvl = LOGLVL	#<-------- LOGGING LEVEL
+		if not self.loglvl == logging.DEBUG:
+			self.logfile = 'handle.log'
+		else:
+			self.logfile = 'server.log'
+		logging.basicConfig(level=self.loglvl, filename=self.logfile, format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 		self.log = logging.getLogger('HANDLE')
 		
 		#create task q
@@ -36,7 +40,7 @@ class Handle(threading.Thread):
 		self.database.create_default_events()
 		
 		#create sever controller
-		self.server = server.Bukkit(self.database, self)
+		self.server = server.Bukkit(self.database, self) 
 		
 		#create networking
 		self.network = network.Network(self.tasks)
@@ -71,6 +75,7 @@ class Handle(threading.Thread):
 					Task.CLT_UPDATE:self.__clt_update,
 					Task.SCH_ADD:self.__sch_add,
 					Task.SCH_REMOVE:self.__sch_remove,
+					Task.SCH_UPDATE:self.__sch_update,
 					Task.API_REGISTER:self.__api_register,
 					Task.API_REMOVE:self.__api_remove,
 					Task.API_GET:self.__api_get,
@@ -100,6 +105,8 @@ class Handle(threading.Thread):
 				self.handlers[task.type](task)
 			except Queue.Empty:
 				pass
+			except KeyError:
+				self.log.error('UKNOWN TASK: %s - %s'%(task.type, task.stype[task.type]))
 	
 	def addtask(self, task):
 		self.tasks.put(task)
@@ -131,6 +138,7 @@ class Handle(threading.Thread):
 		self.log.debug('Calling Network.join()')
 		self.network.join()
 		self.log.debug('Network COMPLETELY closed')
+		self.log.info('Handle Closed')
 		os.remove('handle.pid')
 		self.alive.clear()
 		
@@ -169,17 +177,17 @@ class Handle(threading.Thread):
 	
 	def __srv_start(self, task):
 		if not self.server.running:
-			self.log.debug(':[H]Starting Server')
+			self.log.info('Starting Server')
 			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] Starting Server...'))
 			self.server.startserver()
-			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.API_CONNECT), 8) ))
+			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.API_CONNECT), 1) ))
 		else:	
 			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already running'))
 
 		
 	def __srv_stop(self, task):
 		if self.server.running:
-			self.log.debug(':[H]Stopping Server')
+			self.log.info('Stopping Server')
 			self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
 			self.server.stopserver()
 		else:
@@ -187,7 +195,7 @@ class Handle(threading.Thread):
 		
 	def __srv_restart(self, task):
 		if self.server.running:
-			self.log.debug('Restarting Server')
+			self.log.info('Restarting Server')
 			self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
 			self.server.stopserver()
 			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.SRV_START), 10) ))
@@ -202,6 +210,7 @@ class Handle(threading.Thread):
 		task.data = self.database.config
 		self.backup.cmd_q.put(task)
 		self.log.debug('[H] Added Backup to Q')
+		self.log.info('Backup Started')
 		
 	def __clt_update(self, task):
 		pack = Packet(Packet.UPDATE,[task.data])
@@ -214,6 +223,9 @@ class Handle(threading.Thread):
 	
 	def __sch_remove(self, task):
 		self.schedule.cmd_q.put(SchedCommand(SchedCommand.REMOVE, task.data))
+		
+	def __sch_update(self, task):
+		self.schedule.cmd_q.put(SchedCommand(SchedCommand.UPDATE))
 		
 	def __api_register(self, task):
 		self.api.cmd_q.put(ApiCmd(ApiCmd.REGISTER, task.data))
@@ -232,11 +244,14 @@ class Handle(threading.Thread):
 		self.log.debug('[H]	Api Update: %s Added to Q' % task.data.method)		
 	
 	def __api_connect(self, task):
-		self.api.cmd_q.put(ApiCmd(ApiCmd.CONNECT))
+		dict = self.database.config['JSON_API']
+		params = (dict['host'], dict['port'], dict['user'], dict['pass'], dict['salt'])
+		self.api.cmd_q.put(ApiCmd(ApiCmd.CONNECT, params))
 		self.log.debug('[H] Api Connect Added to Q')
 		
 	def __on_connect(self, task):
 		self.log.debug('ON_CONNECT RECEIVED')
+		self.log.info('Client Connected')
 		pack = Packet(Packet.UPDATE, [('handlev',self.database.config['Handle']['version'])])
 		
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND, pack))
@@ -254,6 +269,7 @@ class Handle(threading.Thread):
 
 		pack = Packet(Packet.UPDATE,[('events',self.schedule.visible_events)])
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.tasks.put(Task(Task.SCH_ADD,(Task(Task.SCH_UPDATE), 30, True)))
 		self.api.cmd_q.put(ApiCmd(ApiCmd.RECONNECT))
 		
 	def interpret(self, command):
@@ -265,6 +281,16 @@ class Handle(threading.Thread):
 			self.tasks.put(Task(Task.SRV_RESTART))
 		elif command == 'exit':
 			self.tasks.put(Task(Task.HDL_EXIT))
+		elif command == 'help':
+			self.tasks.put(Task(Task.NET_LINEUP,'===============================Handle Commands==============================='))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] start                                               start the server'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] stop                                                 stop the server'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] restart                                           restart the server'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] exit                                stop the server and close Handle'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] close                      close the client but leave Handle running'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] Use the Left/Right Keys to change sidebar tabs'))
+			self.tasks.put(Task(Task.SRV_INPUT, 'help'))
+			
 		elif command == 'serve_welcome_packet':
 			self.tasks.put(Task(Task.NET_LINEUP,'Connected to Handle ver. %s' %self.database.config['Handle']['version']))
 		elif command[:10] == 'test_event':
@@ -279,6 +305,9 @@ class Handle(threading.Thread):
 			
 		elif command == 'backup':
 			self.tasks.put(Task(Task.SRV_BACKUP))
+			
+		else:
+			self.tasks.put(Task(Task.SRV_INPUT, command))
 	
 
 				
@@ -314,9 +343,13 @@ class Client(object):
 		#define alive flag
 		self.alive = threading.Event()
 		self.alive.set()
-		self.loglvl = logging.DEBUG
+		self.loglvl = LOGLVL		#<---------------------------- LOGGING LEVEL
 		#setup logging
-		logging.basicConfig(level=self.loglvl, filename='client.log', format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+		if not self.loglvl == logging.DEBUG:
+			self.logfile = 'handle.log'
+		else:
+			self.logfile = 'client.log'
+		logging.basicConfig(level=LOGLVL, filename=self.logfile, format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 		self.log = logging.getLogger('CLIENT')
 		
 
@@ -367,6 +400,7 @@ class Client(object):
 	
 	def __clt_close(self, task):
 		self.log.debug('Disconnecting......')
+		self.log.info('Client Closing')
 		self.network.cmd_q.put(NetworkCommand(NetworkCommand.DISCONN))
 		self.log.debug('Disconnected!	Stopping Network')	
 		time.sleep(1)

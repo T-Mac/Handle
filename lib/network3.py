@@ -140,17 +140,28 @@ class IO(threading.Thread):
 					#self.log.debug('CLIENT returned')
 				if len(x[0]) != 0:
 					self.log.debug('Got Packet')
-					packet = x[0][0].makefile('rwb').readline()
-					
-					self.__reply_receive(packet)
-					
+					try:
+						packet = x[0][0].makefile('rwb').readline()
+						self.__reply_receive(packet)
+					except:
+						self.connected.clear()
+						if self.conn:
+							#self.conn.shutdown(socket.SHUT_RDWR)
+							#self.conn.close()
+							self.cmd_q.put(NetworkCommand(NetworkCommand.DISCONN,True))
+							
 	def __handle_connect(self, cmd):
 		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.log.debug('Connecting.....')
-		self.sock.connect(cmd.data)
-		self.connected.set()
-		self.log.debug('Connected')
-		self.fault_count = 0
+		try:
+			self.sock.connect(cmd.data)
+			self.connected.set()
+			self.log.debug('Connected')
+			self.fault_count = 0
+		except:
+			self.log.error('Connection Error - is the server running?')
+			self.reply_q.put(NetworkCommand(NetworkCommand.TASK,Task(Task.CLT_EXIT)))
+			self.ready_to_exit.set()
 
 		
 		
@@ -161,7 +172,13 @@ class IO(threading.Thread):
 			self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			self.log.debug(self.host + ' : ' + str(self.port))
 			self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-			self.sock.bind(cmd.data)
+			try:
+				self.sock.bind(cmd.data)
+			except socket.error:
+				self.log.error('PORT %s ALREADY IN USE'% str(self.port))
+				self.reply_q.put(NetworkCommand(NetworkCommand.TASK,Task(Task.HDL_EXIT)))
+				self.ready_to_exit.set()
+				return False
 		self.log.debug('Listening......')
 		self.listening.set()
 		self.sock.listen(0)
@@ -193,8 +210,8 @@ class IO(threading.Thread):
 		try:
 			raw = pickle.loads(packetdecode)
 		except EOFError as e:
-			self.log.error('EOFError')
-			self.log.error('Pickled string dump: %s' % data)
+			self.log.debug('EOFError')
+			self.log.debug('Pickled string dump: %s' % data)
 			self.fault_count = self.fault_count + 1
 			if self.fault_count > 25:
 				self.connected.clear()
