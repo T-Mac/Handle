@@ -15,14 +15,16 @@ import os
 import lib.daemon
 import lib.apiconnect as api
 from lib.apiconnect import ApiCmd, ApiObj
-LOGLVL = logging.DEBUG
+
+LOGLVL = logging.INFO	#<----------------------------------------- LOGGING LEVEL------------------------------------
+
 class NotImplemented(Exception):
 	pass
 
 class Handle(threading.Thread):
 	def __init__(self):
 		#config logger
-		self.loglvl = LOGLVL	#<-------- LOGGING LEVEL
+		self.loglvl = LOGLVL	
 		if not self.loglvl == logging.DEBUG:
 			self.logfile = 'handle.log'
 		else:
