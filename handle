@@ -1,0 +1,20 @@
+#!/bin/bash
+
+if [ -f handle.pid ]
+then
+	pid=$(cat handle.pid)
+	path="/proc/"${pid}
+	if [ -d "$path" ]
+	then
+		#echo "daemon running"
+		python handle.py
+	else
+		#echo "daemon stopped"
+		rm -f handle.pid
+		python handle.py
+		python handle.py
+	fi
+else
+python handle.py
+python handle.py
+fi

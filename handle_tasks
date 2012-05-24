@@ -1,0 +1,48 @@
+Handle Tasks Definitions
+--------------------------------------------------------------------------------------
+Handle - Commands pertaining to Handle itself
+
+HDL_COMMAND																send a command the interpreter
+HDL_EXIT																begin shutdown
+HDL_UPDATE																update the Handle code
+HDL_CHECKUP																check for Handle update
+
+--------------------------------------------------------------------------------------
+Network - Commands pertaining to network communication to and from the UI
+
+NET_JOB																	a job update request from the client
+NET_SCREEN																a full screen update request from the client
+NET_VERSION																a Handle version update request from the client
+NET_LINEUP																a line update to the client from the server
+
+--------------------------------------------------------------------------------------
+Server - Commands Pertainging to the control of the Bukkit server
+
+SRV_START																start the bukkit server
+SRV_STOP																stop the bukkit server
+SRV_RESTART																restart the bukkit server
+SRV_INPUT																input to the server
+
+--------------------------------------------------------------------------------------
+Client - Commands pertaining to tasks within the client
+
+CLT_LINEUP																prints a line to the ui
+CLT_INPUT	`															input form the ui
+CLT_UPDATE																update various gui varibles																
+CLT_JOB
+CLT_VERSION
+CLT_EXIT																cause client to shutdown
+
+--------------------------------------------------------------------------------------
+Schedule - Command pertaing to the scheduler
+
+SCH_ADD																	adds a scheduled task
+SCH_REMOVE																removes a scheduled task
+
+--------------------------------------------------------------------------------------
+API - Commands pertaining to the JSON API Connector
+
+API_REGISTER															registers a method with API
+API_REMOVE																removes registered method from API
+API_GET																	get method data one time no registration
+API_UPDATE																updates previously registered method

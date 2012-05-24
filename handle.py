@@ -1,871 +1,423 @@
-#!/usr/bin/python
-import ConfigParser
-from feedparser import parse
 import threading
-import time
-import sys
-import os
 import Queue
-import curses
-import curses.wrapper
-import subprocess
-import shlex
-import datetime
-from optparse import OptionParser
-import daemon2			
-import pickle
-import comm
+import lib.server as server
+import lib.gui as gui
+import lib.network3 as network
+import lib.schedule as schedule
+import logging
+from lib.task import Task
+from lib.network3 import NetworkCommand
+from lib.network3 import Packet
+from lib.schedule import SchedCommand, Event
+import time
+import os.path
+import os
+import lib.daemon
+import lib.apiconnect as api
+from lib.apiconnect import ApiCmd, ApiObj
 
-class runfunc(threading.Thread):
-	def __init__( self, func, lockobj):
-		self.func = func
-		self.lockobj = lockobj
-		threading.Thread.__init__ ( self )
-	def run(self):
-		result = globals()[self.func](self.lockobj)
-		
-		
-#--------------------------Class to handle all config files and globaly needed objects----------------------------	--------
-class database:
+LOGLVL = logging.INFO	#<----------------------------------------- LOGGING LEVEL------------------------------------
+
+class NotImplemented(Exception):
+	pass
+
+class Handle(threading.Thread):
 	def __init__(self):
-		config = {}
-		configfile = ConfigParser.RawConfigParser()
-		configfile.read('handle.cfg')
-		sections = configfile.sections()
-		for section in sections:
-			options = configfile.options(section)
-			internal = {}
-			for option in options:
-				internal[option] = configfile.get(section,option)
-			config[section] = internal
-		self.config = config
-		self.threads = {}
-
-		self.queue = {}
-		self.uid = 0
-		self.locks = {}
-		self.exit = None
-		self.objects = {}
-		self.allclear = threading.Event()
-		self.stdin = None
-		self.stdout = None
-		self.gui = None
-		self.serverstatus = None	
-		self.terminal = None
-		self.comm = None
-		
-	def initserver(self):
-		self.makeque('server')
-		self.makeque('scheduler')
-		self.makeque('comm')
-		self.makelock('server')
-		self.makelock('chat')
-		self.makelock('cwc')
-	
-	def checkid(self,dict,id):
-		if dict.get(id, None) != None:
-			raise KeyError('Id: ' + str(id) + ' already exists')
-			
-	def getconf(self,section = None,option = None):
-		if option == None:
-			if section == None:
-				return self.config
-			else:
-				return self.config[section]
-		else:	
-			return self.config[section][option]
-			
-	def prune(self):
-		for id, thread in self.threads.items():
-			if thread.state == 'reviewed':
-				del self.threads[id]
-			
-	def cancel(self):
-		self.exit = 1
-		
-	def threadadd(self, objname, runlvl, id = None):
-	
-		if id == None and self.threads.get(objname, None) != None:
-			id = objname + '-' + str(self.uid)
-			self.uid += 1	
-		elif id == None and self.threads.get(objname, None) == None:
-			id = objname
-		elif id != None and self.threads.get(objname, None) != None:
-			id = id + '-' + str(self.uid)
-			self.uid += 1
-			
-		self.threads[id] = thread(objname,runlvl,id)
-		
-		return id
-
-	
-	def getthread(self, query = None):
-		if query == None:
-			return self.threads
-		for k, v in self.threads.items():
-			if k == query:
-				return v.obj
-			elif v.obj == query:
-				return k
-		raise KeyError('Query: ' + str(query) + ' not found!')
-		
-	def makeque(self, id = None):
-		if id == None:
-			id = self.uid
-			self.uid += 1
+		#config logger
+		self.loglvl = LOGLVL	
+		if not self.loglvl == logging.DEBUG:
+			self.logfile = 'handle.log'
 		else:
-			if self.queue.get(id, None) != None:
-				raise KeyError('Id: ' + str(id) + ' already exists')
-		self.queue[id] = Queue.Queue(maxsize=0)
-		return self.queue[id]
-
-	def getqueue(self, query = None):
-		if query == None:
-			return self.queue
-		for k, v in self.queue.items():
-			if k == query:
-				return v
-			elif v == query:
-				return k	
-	
-	def makelock(self, id=None):
-		if id == None:
-			id = self.uid
-			self.uid +=1
-		else:
-			self.checkid(self.locks,id)
-		self.locks[id] =threading.Lock()
-	
-	def getlock(self, query = None):
-		if query == None:
-			return self.locks
-		for k, v in self.locks.items():
-			if k == query:
-				return v
-			elif v == query:
-				return k
-
-	
-	def addobj(self, id, obj):
-		self.objects[id] = obj
-	
-	def setstd(self, stdin, stdout):
-		self.stdin = stdin
-		self.stdout = stdout
-	
-	def setgui(self, gui):
-		self.gui = gui
+			self.logfile = 'server.log'
+		logging.basicConfig(level=self.loglvl, filename=self.logfile, format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+		self.log = logging.getLogger('HANDLE')
 		
-	def setsrvstat(self, status):
-		if status == 'running' or status == 'stopped':
-			self.serverstatus = status
-			
-	def setterm(self,term):
-		self.terminal = term
-	
-	def setcomm(self, comm):
-		self.comm = comm
-	
+		#create task q
+		self.tasks = Queue.Queue(maxsize=0)
+		
 
-#---------------------------------------------------------------------------
+		#create database
+		self.database = server.Database(self.tasks)
+		self.database.loadconfig()
+		self.database.create_default_events()
+		
+		#create sever controller
+		self.server = server.Bukkit(self.database, self) 
+		
+		#create networking
+		self.network = network.Network(self.tasks)
+		
+		#create schedule
+		self.schedule = schedule.Schedule(self.tasks)
 
-class thread:
-	def __init__(self, objname, runlvl, id):
+		#create api connection
+		self.api = api.Api(self.tasks)
 		
-		self.properties = {'basename':objname, 'runlvl':runlvl, 'id':id, 'state':'ready', 'nextrun':None}
-		self.properties['obj'] = _conf.objects[objname]()
-		self.updateself()
-		self.arg = None
-	def start(self):
-		self.properties['obj'].start()
+		#create backup
+		self.backup = server.Backup(self.tasks)
+		
+		#put startup tasks
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SERVE,('',int(self.database.config['Handle']['port']))))
+		
+		#define task handlers
+		self.handlers = {
+					Task.HDL_COMMAND:self.__hdl_command,
+					Task.HDL_EXIT:self.__hdl_exit,
+					Task.HDL_UPDATE:self.__hdl_update,
+					Task.HDL_CHECKUP:self.__hdl_checkup,
+					Task.NET_JOB:self.__net_job,
+					Task.NET_SCREEN:self.__net_screen,
+					Task.NET_VERSION:self.__net_version,
+					Task.NET_LINEUP:self.__net_lineup,
+					Task.NET_UPPKG:self.__net_uppkg,
+					Task.SRV_START:self.__srv_start,
+					Task.SRV_STOP:self.__srv_stop,
+					Task.SRV_RESTART:self.__srv_restart,
+					Task.SRV_INPUT:self.__srv_input,
+					Task.CLT_UPDATE:self.__clt_update,
+					Task.SCH_ADD:self.__sch_add,
+					Task.SCH_REMOVE:self.__sch_remove,
+					Task.SCH_UPDATE:self.__sch_update,
+					Task.API_REGISTER:self.__api_register,
+					Task.API_REMOVE:self.__api_remove,
+					Task.API_GET:self.__api_get,
+					Task.API_UPDATE:self.__api_update,
+					Task.API_CONNECT:self.__api_connect,
+					Task.ON_CONNECT:self.__on_connect,
+					Task.SRV_BACKUP:self.__srv_backup,
+					}
+		#set alive flag
+		self.alive = threading.Event()
+		self.alive.set()
+		
 
-
-	
-	def setattr(self,attr,value):
-		self.properties[attr] = value
-		self.updateself()
+		self.pid = os.getpid()
+		open("handle.pid", "w").write(str(self.pid))
+		threading.Thread.__init__( self )
 		
-	def updateself(self):
-		self.id = self.properties['id']
-		self.obj = self.properties['obj']
-		self.state = self.properties['state']
-		self.runlvl = self.properties['runlvl']
-		self.nextrun = self.properties['nextrun']
-		self.basename = self.properties['basename']
-		
-	def args(self,arg):
-		self.properties['obj'] = _conf.objects[self.basename](int(arg))
-		self.updateself()
-		
-		
-class update(threading.Thread):
-	def __init__( self, version):
-		self.version = version
-		threading.Thread.__init__ ( self )
 	def run(self):
-		version = self.version
-		lock = _conf.getlock('server')
-		_conf.gui.handlesay('Waiting for Lock....',2)
-		lock.acquire()
-		_conf.gui.handlesay('Lock acquired!',1)		
-		_conf.gui.handlesay('Updating....',2)
-		url = 'http://ci.bukkit.org/job/dev-CraftBukkit/' + str(version) + '/artifact/target/craftbukkit-0.0.1-SNAPSHOT.jar'
-		urllib.urlretrieve(url,'craftbukkit.jar')
-		if config['bukkit'][-15:] == 'craftbukkit.jar':
-			path = config['bukkit']
-		else:
-			if config['bukkit'][-1:] != '/':
-				path = config['bukkit'] + '/craftbukkit.jar'
-			else:
-				path = config['bukkit'] + 'craftbukkit.jar'
-		shutil.move('craftbukkit.jar', path)
-		configfile = ConfigParser.RawConfigParser()
-		configfile.read('bukkitup.cfg')
-		configfile.set('Config','currentbuild',config['curbuild'])
-		configfile2 = open('bukkitup.cfg', 'wb')
-		configfile.write(configfile2)
-		configfile2.close()
-		lock.release()
-		_conf.gui.handlesay('Updated!',1)
-
-class servercontrol(threading.Thread):
-	def __init__( self):
-		self.oper = _conf.getqueue('server')
-		self.lockobj = _conf.getlock('server')
-		self.config = _conf.getconf('Handle')
-		threading.Thread.__init__ ( self )
-	def run(self):
-		global serveraction
-		if self.config['path_to_bukkit'][-1:] != '/':
-			path = self.config['path_to_bukkit'] + '/craftbukkit.jar'
-		else:
-			path = self.config['path_to_bukkit'] + 'craftbukkit.jar'
-		startcmd = 'java -Xmx' + str(self.config['start_heap']) + 'M -Xms' + str(self.config['max_heap'])  + 'M -jar ' + str(path)
-		startcmd = shlex.split(startcmd)
-		self.lockobj.acquire()
-		while True:
-			oper = self.oper.get()		
-			if oper == 'start':
-				_conf.gui.handlesay('Starting Server....',2)
-				os.chdir(self.config['path_to_bukkit'])
-				p = subprocess.Popen(startcmd, shell=False, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-				os.chdir(self.config['original_path'])
-				_conf.setstd(p.stdin, p.stdout)
-				_conf.setsrvstat('running')
-				_conf.gui.handlesay('Started!',1)
-			elif oper == 'stop':
-				#chatttimer('Server', 60)
-				try:
-						p.stdin.write('stop\n')
-				except IOError:
-					pass
-				q = 1
-				p.communicate(None)
-				
-				#while q == 1:
-					#try:
-					#	p.stdin.write('')
-					#except IOError:
-				_conf.setsrvstat('stopped')
-					#	q = 2
-			elif oper =='restart':
-				if _conf.serverstatus == 'running':
-				#chattimer('Server Restart', 300)
-					_conf.gui.handlesay('Stopping Server....',2)
-					try:
-							p.stdin.write('stop\n')
-					except IOError:
-						pass
-					p.communicate(' ')
-					_conf.setsrvstat('stopped')
-					_conf.gui.handlesay('Server Stopped!.......Waiting 30 secs',1)
-					time.sleep(15)
-					_conf.gui.handlesay('Server starting in 15 secs')
-					time.sleep(10)
-					_conf.gui.handlesay('Server starting in 5 secs')
-					time.sleep(5)
-					_conf.gui.handlesay('Starting Server....',2)
-					os.chdir(self.config['path_to_bukkit'])
-					p = subprocess.Popen(startcmd, shell=False, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-					os.chdir(self.config['original_path'])
-					_conf.setstd(p.stdin, p.stdout)
-					_conf.setsrvstat('running')
-					_conf.gui.handlesay('Server Started!',1)
-				else:
-					_conf.gui.handlesay("[ERROR] The server isn't running")
-			elif oper == 'release':
-				self.lockobj.release()
-				_conf.gui.handlesay('Server lock released!')
-				time.sleep(1)
-			elif oper == 'kill':
-				if _conf.serverstatus == 'running':
-					p.stdin.write('stop\n')
-					self.lockobj.release()
-				return
-			
-class chattimer(threading.Thread):
-	def __init__( self, config):
-		self.config = config
-		self.config['screenbukkit'] = _conf.getconf('Handle','screen_bukkit')
-		self.config['chatlock'] = _conf.getlock('chat')
-		self.id = self.config['id']
-		threading.Thread.__init__ ( self )
-	def run(self):
-		x = self.config['interval'] * 60
-		nextrun = time.time() + x
-		_conf.threads[self.id].setattr('nextrun',nextrun)
-		_conf.gui.handlesay(self.config['message'] + ' at ' + time.strftime('%H:%M',time.localtime(nextrun)))
-		while x > 360:
-			if self.statecheck() == 1:
-				return None
-			elif self.statecheck() == 2:
-				x = x + 10
-				nextrun = nextrun + 10
-				_conf.threads[self.id].setattr('nextrun',nextrun)
-			x = x - 10
-			time.sleep(10)
-
-		threshhold = x
-		while x > 25:
-			if self.statecheck() == 1:
-				return None
-			elif self.statecheck() == 2:
-				x = x + 10
-				nextrun = nextrun + 10
-				_conf.threads[self.id].setattr('nextrun',nextrun)
-				
-			if x > 60 and x <= threshhold:
-				self.config['chatlock'].acquire()
-				_conf.gui.handlesay(self.config['message'] + ' in ' + str(x/60) + ' minutes')
-				serversay(self.config['message'] + ' in ' + str(x/60) + ' minutes')
-				self.config['chatlock'].release()
-				threshhold = threshhold/2
-				
-			if x <= 60 and x <= threshhold:
-				self.config['chatlock'].acquire()
-				_conf.gui.handlesay(self.config['message'] + ' in ' + str(x) + ' secs')
-				serversay(self.config['message'] + ' in ' + str(x) + ' secs')
-				self.config['chatlock'].release()
-				threshhold = threshhold/2
-				
-			x = x - 10
-			if x < 25:
-				x = x + 10
-				time.sleep(x-15)
-				x = 0
-			else:
-				time.sleep(10)
-		self.config['chatlock'].acquire()
-		_conf.gui.handlesay(self.config['message'] + ' in 15 secs')
-		serversay(self.config['message'] + ' in 15 secs')
-		self.config['chatlock'].release()
-		if self.statecheck() == 1:
-			return None
-		time.sleep(5)
-		self.config['chatlock'].acquire()
-		_conf.gui.handlesay(self.config['message'] + ' in 10 secs')
-		serversay(self.config['message'] + ' in 10 secs')
-		self.config['chatlock'].release()
-		if self.statecheck() == 1:
-			return None
-		time.sleep(5)
-		y = 5
-		while y > 0:
-			if self.statecheck() == 1:
-				return None
-			self.config['chatlock'].acquire()
-			_conf.gui.handlesay(self.config['message'] + ' in ' + str(y) + ' secs')
-			serversay(self.config['message'] + ' in ' + str(y) + ' secs')
-			self.config['chatlock'].release()
+		self.network.start()
+		self.schedule.start()
+		self.api.start()
+		self.backup.start()
+		while self.alive.isSet():
+			try:
+				task = self.tasks.get(True, 0.1)
+				self.log.debug('Got Task: ' + task.stype[task.type])
+				self.handlers[task.type](task)
+			except Queue.Empty:
+				pass
+			except KeyError:
+				self.log.error('UKNOWN TASK: %s - %s'%(task.type, task.stype[task.type]))
+	
+	def addtask(self, task):
+		self.tasks.put(task)
+		
+	def __hdl_command(self, task):
+		self.interpret(task.data)
+		
+	def __hdl_exit(self, task):
+		if self.server.running:
+			self.api.join()
+			pack = Packet(Packet.LINEUP,'[HANDLE] Api Connection Closed')
+			self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+			self.server.stopserver()
 			time.sleep(1)
-			y = y-1
-		self.config['signal'].set()
+			pack = Packet(Packet.LINEUP,'[HANDLE] Server Closed')
+			self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.log.debug('Sent closed message')
+		time.sleep(1)
+		self.schedule.join()
+		pack = Packet(Packet.LINEUP,'[HANDLE] Schedule Stopped')
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.backup.join()
+		pack = Packet(Packet.LINEUP,'[HANDLE] Backup Stopped')
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		time.sleep(1)
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.EXIT, ('127.0.0.1',int(self.database.config['Handle']['port']) )))
+		self.log.debug('Closed Networking')
+		time.sleep(1)
+		self.log.debug('Calling Network.join()')
+		self.network.join()
+		self.log.debug('Network COMPLETELY closed')
+		self.log.info('Handle Closed')
+		os.remove('handle.pid')
+		self.alive.clear()
 		
-	def cancel(self):
-		if _conf.threads[self.id].state == 'canceled':
-			_conf.gui.handlesay(self.config['message'] + ' timer canceling')
-			serversay(self.config['message'] + ' canceling')
-			self.config['signal'].set()
-			return True
-			
-			
-	def statecheck(self):
-		if _conf.threads[self.id].state == 'canceled':
-			self.config['signal'].set()
-			return 1
-		elif _conf.threads[self.id].state == 'paused':
-			return 2
-		else:
-			return 0
-
-			
-class mapper(threading.Thread):
-	def __init__( self, interval = None):
-		self.interval = interval
-		threading.Thread.__init__ ( self )
-	def run(self):
-		#Load config
-		self.setid()
-		config = {}
-		_conf.threads[self.id].setattr('state','running')
-		if self.interval == None:
-			config['interval'] = int(_conf.getconf('Mapper','interval'))
-		else:
-			config['interval'] = self.interval
-		config['message'] = 'Server map'
-		config['signal'] = threading.Event()
-		config['id'] = self.id
-		#Create timer thread
-		timer = chattimer(config)
-		#start it
-		timer.start()
-		#wait for signal
-		config['signal'].wait()
-		if _conf.threads[self.id].state == 'canceled':
-			_conf.threads[self.id].setattr('state','stopped')
-			_conf.gui.handlesay('Mapper Canceled!',1)
-			return ''
-		updatewd()
-		_conf.getlock('cwc').acquire()
-		_conf.gui.handlesay('Mapping......',2)
-		if _conf.getconf('Mapper','script') != 'None':
-			os.system('./' + _conf.getconf('Mapper','script'))
-		else:
-			time.sleep(10)
-		_conf.gui.handlesay('Done!',1)
-
-		_conf.getlock('cwc').release()
-		_conf.threads[self.id].setattr('state','stopped')
-	def setid(self):
-		self.id = _conf.getthread(self)
+	def __hdl_update(self, task):
+		raise NotImplemented()
 		
-class backup(threading.Thread):
-	def __init__( self, interval = None):
-		self.interval = interval
-		threading.Thread.__init__ ( self )
-	def run(self):
-		#Load config
-		self.setid()
-		_conf.threads[self.id].setattr('state','running')
-		config = {}
-		if self.interval == None:
-			config['interval'] = int(_conf.getconf('Backup','interval'))
-		else:
-			config['interval'] = self.interval
-		config['signal'] = threading.Event()
-		config['id'] = self.id
-		config['message'] = 'Backup'
-		config['path'] = _conf.getconf('Handle','path_to_bukkit')
-		if config['path'][-1:] == '/':
-			config['path'] = config['path'][:-1]
-		config['worlds'] = _conf.getconf('Handle','worlds')
-		config['worlds'] = config['worlds'].split()
-		config['handlepath'] = _conf.getconf('Handle','original_path')
-		timer = chattimer(config)
-		timer.start()
-		config['signal'].wait()
-		if _conf.threads[self.id].state == 'canceled':
-			_conf.threads[self.id].setattr('state','stopped')
-			_conf.gui.handlesay('Backup Canceled',1)
-			return ''
-		updatewd()
-		_conf.getlock('cwc').acquire()
-		_conf.gui.handlesay('Backing up......',2)
-		if not os.path.exists(config['handlepath'] + '/backups'):
-			os.mkdir(config['handlepath'] + '/backups')
- 
-		if not os.path.exists(config['handlepath'] + '/wd/'):
-			os.mkdir(config['handlepath'] + '/wd')
-		os.chdir(config['handlepath'] + '/wd/')
-		for world in config['worlds']:
-			if not os.path.exists(config['handlepath'] + '/backups/' + world):
-				os.mkdir(config['handlepath'] + '/backups/' + world)
-			os.system('tar -cf ' + config['handlepath'] + '/backups/' + world + '/' + str(time.strftime('%b-%d-%H%M')) + '.tar.gz ' + world)
-			
-		_conf.gui.handlesay('Done!',1)
-		_conf.getlock('cwc').release()
-		_conf.threads[self.id].setattr('state','stopped')
+	def __hdl_checkup(self, task):
+		raise NotImplemented()
 		
-	def setid(self):
-		self.id = _conf.getthread(self)
+	def __net_job(self, task):
+		raise NotImplemented()
 		
-class restarter(threading.Thread):
-	def __init__( self, interval = None):
-		self.interval = interval
-		threading.Thread.__init__ ( self )
-	def run(self):
-		self.setid()
-		_conf.threads[self.id].setattr('state','running')
-		config = {}
-		configfile = ConfigParser.RawConfigParser()
-		configfile.read('handle.cfg')
-		if self.interval == None:
-			config['interval'] = int(_conf.getconf('Restart','interval'))
-		else:
-			config['interval'] = self.interval
-		config['signal'] = threading.Event()
-		config['id'] = self.id
-		config['message'] = 'Server restart'
-		config['screenbukkit'] = _conf.getconf('Handle','screen_bukkit')
-		timer = chattimer(config)
-		timer.start()
-		config['signal'].wait()
-		if _conf.threads[self.id].state == 'canceled':
-			_conf.threads[self.id].setattr('state','stopped')
-			_conf.gui.handlesay('Restart Canceled',1)
-			return ''
-		_conf.getqueue('server').put('restart')
-		time.sleep(60)
-		_conf.threads[self.id].setattr('state','stopped')
-	def setid(self):
-		self.id = _conf.getthread(self)
+	def __net_screen(self, task):
+		ups = []
+		ups.append(('screen',self.database.data['screen']))
+		pack = Packet(Packet.UPDATE, ups)
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND, pack))
+		self.log.debug('[H] Update Added to Q')
 		
+	def __net_version(self, task):
+		raise NotImplemented()
 		
-		
-class scheduler(threading.Thread):
-	def __init__( self):
-		threading.Thread.__init__ ( self )
-	def run(self):
-		self.defaultthreads()
-		os.chdir(_conf.getconf('Handle','original_path'))
-		while _conf.exit == None:
-			x = 0
-			for id, thread in _conf.threads.items():
-				if _conf.threads[id].state == 'stopped':
-					_conf.threads[id].setattr('state','reviewed')
-					if _conf.threads[id].runlvl == 'system' or _conf.threads[id].runlvl == 'normal':
-						basename = _conf.threads[id].basename
-						runlvl = _conf.threads[id].runlvl
-						if len(id) > 5:
-							if id[:5] == 'auto_':
-								_conf.prune()
-								name = _conf.threadadd(basename,runlvl,id)
-							else:
-								pass
-						else:
-							_conf.prune()
-							name = _conf.threadadd(basename,runlvl)
-						_conf.threads[name].start()
-					else:
-						_conf.prune()
-					
-		_conf.gui.handlesay('Killing Threads.....')
-		_conf.getqueue('server').put('kill')
-		x = 0
-		for id, o in _conf.threads.items():
-			_conf.threads[id].setattr('state', 'canceled')
-			x += 1
-		y = 0
-		while x > 0:
-			dict = _conf.threads
-			for id, o in dict.items():
-				if _conf.threads[id].state == 'stopped':
-					_conf.threads[id].setattr('state','reviewed')
-					_conf.gui.handlesay('Killed: ' + id)
-					_conf.prune()
-					x = x - 1
-				
+	def __net_lineup(self, task):
+		if self.database.data['screen'] == None:
+			self.database.data['screen'] = []
+		if len(self.database.data['screen']) == 100:
+			self.database.data['screen'].pop(0)
+		encodeds = task.data.encode('hex_codec')
+		self.database.data['screen'].append(encodeds)
+		pack = Packet(Packet.LINEUP,task.data)
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.log.debug(':[H]Packet added to Q')		
 	
-		_conf.getlock('server').acquire()
-		_conf.allclear.set()
-	def defaultthreads(self):
-		_conf.addobj('mapper', globals()['mapper'])
-		_conf.addobj('backup', globals()['backup'])
-		_conf.addobj('restart', globals()['restarter'])
+	def __net_uppkg(self, task):
+		raise NotImplemented()
 	
-		_conf.threadadd('mapper','normal','auto_mapper')
-		_conf.threadadd('backup','normal','auto_backup')
-		_conf.threadadd('restart','normal','auto_restart')
-	
-		for id, thread in _conf.threads.items():
-			thread.start()			
+	def __srv_start(self, task):
+		if not self.server.running:
+			self.log.info('Starting Server')
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] Starting Server...'))
+			self.server.startserver()
+			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.API_CONNECT), 1) ))
+		else:	
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already running'))
 
-class terminal:
+		
+	def __srv_stop(self, task):
+		if self.server.running:
+			self.log.info('Stopping Server')
+			self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
+			self.server.stopserver()
+		else:
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already stopped'))
+		
+	def __srv_restart(self, task):
+		if self.server.running:
+			self.log.info('Restarting Server')
+			self.api.cmd_q.put(ApiCmd(ApiCmd.DISCONNECT))
+			self.server.stopserver()
+			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.SRV_START), 10) ))
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] Server Stopped - Waiting 10 secs.....'))
+		else:	
+			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already running'))
+		
+	def __srv_input(self, task):
+		self.server.input(task.data)	
+		
+	def __srv_backup(self, task):
+		task.data = self.database.config
+		self.backup.cmd_q.put(task)
+		self.log.debug('[H] Added Backup to Q')
+		self.log.info('Backup Started')
+		
+	def __clt_update(self, task):
+		pack = Packet(Packet.UPDATE,[task.data])
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.log.debug('[H] Sent Update: %s - %s'% (task.data[0][0], str(task.data[0][1])))
+		
+	def __sch_add(self, task):
+		self.schedule.cmd_q.put(SchedCommand(SchedCommand.ADD, task.data))
+		self.log.debug('[H] Task addded to Schedule Q')
+	
+	def __sch_remove(self, task):
+		self.schedule.cmd_q.put(SchedCommand(SchedCommand.REMOVE, task.data))
+		
+	def __sch_update(self, task):
+		self.schedule.cmd_q.put(SchedCommand(SchedCommand.UPDATE))
+		
+	def __api_register(self, task):
+		self.api.cmd_q.put(ApiCmd(ApiCmd.REGISTER, task.data))
+		self.log.debug('[H] Api Register:  %s Added  to Q' % task.data.method)
+		
+	def __api_remove(self, task):
+		self.api.cmd_q.put(ApiCmd(ApiCmd.REMOVE, task.data))
+		self.log.debug('[H]	Api Remove: %s Added to Q' % task.data.method)
+		
+	def __api_get(self,task):
+		self.api.cmd_q.put(ApiCmd(ApiCmd.Get, task.data))
+		self.log.debug('[H]	Api Get: %s Added to Q' % task.data.method)
+		
+	def __api_update(self, task):
+		self.api.cmd_q.put(ApiCmd(ApiCmd.UPDATE, task.data))
+		self.log.debug('[H]	Api Update: %s Added to Q' % task.data.method)		
+	
+	def __api_connect(self, task):
+		dict = self.database.config['JSON_API']
+		params = (dict['host'], dict['port'], dict['user'], dict['pass'], dict['salt'])
+		self.api.cmd_q.put(ApiCmd(ApiCmd.CONNECT, params))
+		self.log.debug('[H] Api Connect Added to Q')
+		
+	def __on_connect(self, task):
+		self.log.debug('ON_CONNECT RECEIVED')
+		self.log.info('Client Connected')
+		pack = Packet(Packet.UPDATE, [('handlev',self.database.config['Handle']['version'])])
+		
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND, pack))
+		if self.database.data['screen'] == None:
+			self.database.data['screen'] = []
+		if len(self.database.data['screen']) == 100:
+			self.database.data['screen'].pop(0)
 			
-	def interpret(self,command):
-		if command == 'exit':
-			_conf.cancel()
-			_conf.allclear.wait()
-			return False
-		elif command == 'start':
-			if _conf.serverstatus == 'running':
-				_conf.gui.handlesay('The server is already running!')
-			else:
-				_conf.getqueue('server').put('start')
-		elif command == 'restart':
-			_conf.getqueue('server').put('restart')
-		elif command[:5] == 'sched':
-			command = command.split()
-			x = 0
-			if len(command) > 1:
-				for item, obj in _conf.objects.items():
-					if item == command[1]:
-						x = 1
-			if len(command) == 3:
-				if x == 1:
-					id = _conf.threadadd(command[1],'user')
-					_conf.threads[id].args(command[2])
-					_conf.gui.handlesay('Scheduled: ' + id)
-					_conf.threads[id].start()
-				else:
-					_conf.gui.handlesay('No such job: ' + command[1])
-					_conf.gui.handlesay('Avaliable jobs:')
-					line = '[ '
-					for item, obj  in _conf.objects.items():
-						line = line + item + ', '
-					line = line + ' ]'
-					_conf.gui.handlesay(line)
-			elif len(command) == 2:
-				if x == 1:
-					
-					id = _conf.threadadd(command[1],'user')
-					_conf.gui.handlesay('Scheduled: ' + id)
-					_conf.threads[id].start()
-				else:
-					_conf.gui.handlesay('No such job: ' + command[1])
-					line = '[ '
-					for item, obj  in _conf.objects.items():
-						line = line + item + ', '
-					line = line + ' ]'
-					_conf.gui.handlesay(line)
-					_conf.gui.handlesay('Avaliable jobs:')
-			else:
-				line = '[ '
-				for item, obj  in _conf.threads.items():
-					line = line + item + ', '
-				line = line + ' ]'
-				_conf.gui.handlesay(line)
-			
-		elif command == 'srvstat':
-			_conf.gui.handlesay(_conf.serverstatus)
+		s = 'Connected to Handle ver. %s' % self.database.config['Handle']['version']
+		encodeds = s.encode('hex_codec')
+		if not self.database.data['screen'][len(self.database.data['screen'])-1] == encodeds:
+			self.database.data['screen'].append(encodeds)
+		pack = Packet(Packet.UPDATE,[('screen',self.database.data['screen'])])
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+
+		pack = Packet(Packet.UPDATE,[('events',self.schedule.visible_events)])
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+		self.tasks.put(Task(Task.SCH_ADD,(Task(Task.SCH_UPDATE), 30, True)))
+		self.api.cmd_q.put(ApiCmd(ApiCmd.RECONNECT))
+		
+	def interpret(self, command):
+		if command == 'start':
+			self.tasks.put(Task(Task.SRV_START))
 		elif command == 'stop':
-			_conf.getqueue('server').put('stop')
+			self.tasks.put(Task(Task.SRV_STOP))
+		elif command == 'restart':
+			self.tasks.put(Task(Task.SRV_RESTART))
+		elif command == 'exit':
+			self.tasks.put(Task(Task.HDL_EXIT))
 		elif command == 'help':
-			_conf.gui.handlesay('----------------------Help-------------------------')
-			_conf.gui.handlesay('<> optional            [] required')
-			_conf.gui.handlesay('start:                 start server')
-			_conf.gui.handlesay('stop <secs>:           stop server in <secs>')
-			_conf.gui.handlesay('restart:               resart server')
-			_conf.gui.handlesay('exit:                  stop server and close Handle')
-			_conf.gui.handlesay('sched <job> <mins>:    w/o args list running jobs, w/ start <job> with <mins> delay.')
-			_conf.gui.handlesay('cancel <job>:          cancel any user started jobs')
-			_conf.gui.handlesay('pause <job>:           pause any job')
-			_conf.gui.handlesay('unpause:               unpause jobs')
-			_conf.gui.handlesay('jobs:                  list avaliable jobs')
-			_conf.gui.handlesay('help:                  print this help')
+			self.tasks.put(Task(Task.NET_LINEUP,'===============================Handle Commands==============================='))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] start                                               start the server'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] stop                                                 stop the server'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] restart                                           restart the server'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] exit                                stop the server and close Handle'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] close                      close the client but leave Handle running'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] Use the Left/Right Keys to change sidebar tabs'))
+			self.tasks.put(Task(Task.SRV_INPUT, 'help'))
 			
-			if _conf.serverstatus == 'running':
-				try:
-					_conf.stdin.write(command + '\n')
-				except IOError:
-					pass
-		elif command[:6] == 'cancel':
-			try:
-				_conf.getthread(command[7:])
-			except KeyError:
-				_conf.gui.handlesay('[ERROR] ' + command[7:] + ": Job doesn't exist")
-				line = ' ['
-				for item, obj  in _conf.objects.items():
-					line = line + item + ', '
-				line = line + ' ]'
-				_conf.gui.handlesay(line,1)
-			else:	
-				_conf.gui.handlesay(command[7:] + ' Canceling....',2)
-				_conf.threads[command[7:]].setattr('state','canceled')
-				_conf.comm.pack(0x03a)
-		
-		elif command[:5] == 'pause':
-			try:
-				_conf.getthread(command[6:])
-			except KeyError:
-				_conf.gui.handlesay('[ERROR] ' + command[6:] + ": Job doesn't exist")
-			else:
-				_conf.threads[command[6:]].setattr('state','paused')
-				_conf.gui.handlesay(command[6:] + ' Paused')
-				_conf.comm.pack(0x3a)
+		elif command == 'serve_welcome_packet':
+			self.tasks.put(Task(Task.NET_LINEUP,'Connected to Handle ver. %s' %self.database.config['Handle']['version']))
+		elif command[:10] == 'test_event':
+			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.NET_LINEUP, '%s' % command[11:]), 5)))
+			self.tasks.put(Task(Task.NET_LINEUP, 'added test task'))
+			
+		elif command[:11] == 'test_method':
+			ao = ApiObj(command[12:], 30)
+			self.tasks.put(Task(Task.API_REGISTER, ao))
+			self.tasks.put(Task(Task.API_UPDATE, ao))
+			self.tasks.put(Task(Task.NET_LINEUP, 'added test method'))
+			
+		elif command == 'backup':
+			self.tasks.put(Task(Task.SRV_BACKUP))
+			
+		else:
+			self.tasks.put(Task(Task.SRV_INPUT, command))
+	
+
 				
-		elif command[:7] == 'unpause':
+				
+class Client(object):
+	def __init__(self):
+		#threading.Thread.__init__(self)
+		#create task q
+		self.tasks = Queue.Queue(maxsize=0)
+		print str(self)
+		#create database
+		self.database = server.Database(self.tasks)
+		self.database.loadconfig()
+		
+		#create networking
+		self.network = network.Network(self.tasks)
+		
+		#put startup tasks
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.CONNECT,('127.0.0.1',int(self.database.config['Handle']['port']))))
+		
+		#create gui
+		self.gui = gui.Gui(self)
+		#define task handlers
+		self.handlers = {
+				Task.CLT_UPDATE:self.__clt_updates,
+				Task.CLT_INPUT:self.__clt_input,
+				Task.CLT_LINEUP:self.__clt_lineup,
+				Task.CLT_EXIT:self.__clt_exit,
+				Task.CLT_CLOSE:self.__clt_close,
+				Task.NET_SCREEN:self.__clt_updates,
+				}
+		
+		#define alive flag
+		self.alive = threading.Event()
+		self.alive.set()
+		self.loglvl = LOGLVL		#<---------------------------- LOGGING LEVEL
+		#setup logging
+		if not self.loglvl == logging.DEBUG:
+			self.logfile = 'handle.log'
+		else:
+			self.logfile = 'client.log'
+		logging.basicConfig(level=LOGLVL, filename=self.logfile, format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+		self.log = logging.getLogger('CLIENT')
+		
+
+		
+	def run(self):
+		self.network.start()
+		self.gui.initscreen()
+
+		while self.alive.isSet():
 			try:
-				_conf.getthread(command[8:])
-			except KeyError:
-				_conf.gui.handlesay('[ERROR] ' + command[8:] + ": Job doesn't exist")
-			else:
-				_conf.threads[command[8:]].setattr('state','running')
-				_conf.gui.handlesay(command[8:] + ' Unpaused')
-				_conf.comm.pack(0x03a)
-		
-		elif command == 'jobs':
-			line = ' Avaliable Jobs: ['
-			for item, obj  in _conf.objects.items():
-				line = line + item + ', '
-			line = line + ' ]'
-			_conf.gui.handlesay(line,1)
+				task = self.tasks.get(True, 0.1)
+				self.log.debug('Got Task: ' + task.stype[task.type])
+				self.handlers[task.type](task)
 			
+			except Queue.Empty:
+				pass
+		
+		return None
+	def addtask(self, task):
+		self.tasks.put(task)
+		
+	def __clt_updates(self, task):
+		self.gui.update(task.data)
+			
+		
+	def __clt_input(self, task):
+		if task.data == 'close':
+			self.tasks.put(Task(Task.CLT_CLOSE))
 		else:
-			if _conf.serverstatus == 'running':
-				try:
-					_conf.stdin.write(command + '\n')
-				except (IOError, ValueError):
-					pass
+			pack = Packet(Packet.INPUT,task.data)
+			self.network.cmd_q.put(NetworkCommand(NetworkCommand.SEND,pack))
+			self.log.debug(':[H]Sent Command: ' + task.data)
 		
-			else:
-				_conf.gui.handlesay('Unknown Command')
-		return True
-		
-class gui(threading.Thread):
-	def __init__(self):
-		self.screenarray = []
-		for x in range(100):
-			self.screenarray.append('')
-		self.updatable = 0
-		self.srvinf = './tmp/serverout'
-		threading.Thread.__init__(self)
-	def run(self):
-		while _conf.exit != 1:
-
-			if _conf.serverstatus == 'running':
-				try:
-					line = _conf.stdout.readline()
-				except (AttributeError,ValueError, IOError):
-					pass
-				self.screenup(line.strip())
-		_conf.allclear.wait()
+	def __clt_lineup(self, task):
+		self.gui.addline(task.data)
+		self.log.debug(':[H]Line Update: ' + task.data)
 	
-	def screenup(self,line, update = 0):	
-		if update == 2:
-			self.updatable = 1
-			self.screenarray.append(line)
-			del self.screenarray[0]
-		elif update == 1:	
-			if self.updatable == 1:
-				print len(self.screenarray)
-				self.screenarray[len(self.screenarray)-2] = self.screenarray[len(self.screenarray)-2] + line
-			else:
-				self.screenarray.append(line)
-				del self.screenarray[0]
-			self.updatable = 0
-		else:
-			self.updatable = 0
-			self.screenarray.append(line)
-			del self.screenarray[0]
-		
-		data = {'id':0x03, 'item':4, 'line':line,'updatable':update}
-		_conf.comm.pack(0x03,data)
-
-		
-	def handlesay(self,line,update = 0):
-		self.screenup(line,update)
-class network(threading.Thread):
-	
-	def __init__(self):
-		self.queue = Queue.Queue(maxsize=0)
-		self.net = comm.comm(self.queue,'server')
-		self.net.start()			
-		threading.Thread.__init__ ( self )
-		
-	def run(self):
-		while(True):
-			packet = self.queue.get()
-			self.parse(packet)	
-			
-	def pack(self, packetid, data = None):
-		if packetid == 0x00:
-			data = {'id':0x01}
-		elif packetid == 0x03a:
-			data = {}
-			jobs = {}
-			for id, thread in _conf.threads.items():					
-				jobs[id] =  {'nextrun':thread.nextrun,'runlvl':thread.runlvl,'state':thread.state}
-			data['jobs'] = jobs	
-			data['id'] = 0x03
-			data['item'] = 1
-		elif packetid == 0x03b:
-			data = {'id':0x03, 'item':2, 'screen':_conf.gui.screenarray}
-		elif packetid == 0x03c:
-			version = getversion()
-			data = {'id':0x03, 'item':3, 'version':version}
-		self.net.pack(data)
-					
-	def parse(self, packet):
-		id = packet['id']
-		if id == 0x01:
-			if packet['item'] == 1:
-				self.pack(0x03a)
-			elif packet['item'] == 2:
-				self.pack(0x03b)
-			elif packet['id'] == 3:
-				self.pack(0x03c)
-		elif id == 0x02:
-			_conf.terminal.interpret(packet['command'])
-		
-	
+	def __clt_exit(self, task):
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.STOP))
+		time.sleep(1)
+		self.log.debug('Calling Network.join()')
+		self.network.join()
+		self.log.debug('Network COMPLETELY closed')
+		self.gui.exit()
+		self.alive.clear()
+		return None
 
 	
-			
-def getversion():
-	#Read from CraftBukkit Build RSS
-	bukkit = feedparser.parse('http://ci.bukkit.org/job/dev-CraftBukkit/rssAll')
-	# Extract current version
-	version = bukkit.entries[0].link[-4:-1]
-	return version
-
-
-def updatecheck(config):
-	version = getversion()
-	if (config['instbuild'] + config['interval']) <= version:
-		return 1
+	def __clt_close(self, task):
+		self.log.debug('Disconnecting......')
+		self.log.info('Client Closing')
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.DISCONN))
+		self.log.debug('Disconnected!	Stopping Network')	
+		time.sleep(1)
+		self.network.cmd_q.put(NetworkCommand(NetworkCommand.STOP))
+		self.log.debug('Calling Network.join()')
+		self.network.join()
+		self.log.debug('Network COMPLETELY closed')
+		self.gui.exit()
+		self.alive.clear()
+		
+if __name__ == "__main__":
+	if os.path.exists('./handle.pid'):
+		client = Client()
+		client.run()
 	else:
-		return 0
-		
-def updatewd():
-	path = _conf.getconf('Handle','path_to_bukkit')
-	worldconfig = _conf.getconf('Handle','worlds')
-	worlds = worldconfig.split()
-	backuppath = _conf.getconf('Handle','original_path')
-	_conf.getlock('cwc').acquire()
-	if not os.path.exists(backuppath + '/wd/'):
-		os.mkdir(backuppath + '/wd/')
-	for world in worlds:
-		if not os.path.exists(backuppath + '/wd/' + world):
-			os.mkdir(backuppath + '/wd/' + world)
-		os.system('rsync -r -t -v ' + path + '/' + world + ' ' + backuppath + '/wd/ > ./wd/' + world + 'changes') 
-	_conf.getlock('cwc').release()
-
-def serversay(message):
-	screen = _conf.getconf('Handle','screen_bukkit')
-	#os.system('screen -S ' + screen + ' -p 0 -X stuff "`printf "say ' + message + '\r"`"')
-	
-def startgui():
-	guiid = globals()['gui']()
-	_conf.setgui(guiid)
-	guiid.start()
-
-	
-def startup():	
-
-	#---------new config--------------------
-	global _conf
-	_conf = database()	
-	_conf.initserver()	
-	print 'database started'
-	_conf.getqueue('server').put_nowait('start')
-	
-	#------------------------------------------------------
-	print 'database started'
-	network1 = network()
-	
-	_conf.setcomm(network1)
-	network1.start()
-	print 'network started'
-	startgui()
-	print 'gui started'
-	servercontroller = servercontrol()
-	schedulerinst = scheduler()
-	_conf.gui.handlesay(_conf.getconf('Handle','version'))
-	servercontroller.start()
-	schedulerinst.start()
-	terminalinst = terminal()
-	_conf.setterm(terminalinst)
-
-#daemon2.createDaemon()
-startup()
+		lib.daemon.createDaemon()
+		srv= Handle()
+		srv.start()
