@@ -78,6 +78,8 @@ class Database:
 				internal[option] = configfile.get(section,option)
 			self.config[section] = internal
 		self.config['Handle']['original_path'] = os.getcwd()
+		if self.config['Handle']['path_to_bukkit'][-1:] == '/':
+			self.config['Handle']['path_to_bukkit'] = self.config['Handle']['path_to_bukkit'][:-1]
 		
 		
 	def create_default_events(self):	
