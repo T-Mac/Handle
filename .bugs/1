@@ -1,0 +1,8 @@
+[Bug]
+remark =  Throwing IndexError on down arrow | Trying to scroll back to far?
+created = Tue Jun 19 11:45:10 2012
+completed = False
+modified = Tue Jun 19 11:46:49 2012
+id = 1
+desc = IndexError gui.py line 309
+

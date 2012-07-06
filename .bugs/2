@@ -1,0 +1,8 @@
+[Bug]
+remark =  |  Commands from the console are being deprecated by 5-6 characters causing unknown command
+created = Wed Jun 27 11:14:46 2012
+completed = False
+modified = Wed Jun 27 11:16:15 2012
+id = 2
+desc = Some console commands not working
+

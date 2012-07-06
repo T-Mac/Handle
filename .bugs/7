@@ -1,0 +1,8 @@
+[Bug]
+remark =  |  start/stop/restart/status
+created = Thu Jul  5 12:04:54 2012
+completed = False
+modified = Thu Jul  5 12:05:25 2012
+id = 7
+desc = Add controls to Handle bash
+

@@ -1,0 +1,8 @@
+[Bug]
+remark = |  login with password from chat |  execute command like from terminal
+created = Wed Jun 27 17:07:23 2012
+completed = False
+modified = Wed Jun 27 17:09:28 2012
+id = 4
+desc = RCon from within minecraft
+

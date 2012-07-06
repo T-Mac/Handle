@@ -1,2 +1,2 @@
-Code is curently being rewritten please be patient.
+Handle is a frontend for the popular minecraft server Bukkit. It provides gui like functionality from the commandline while also daemonizing the bukkit server without a need for screen.
 Handle is released under the WTFPL v2.0 see LICENSE for details

@@ -203,7 +203,7 @@ class Handle(threading.Thread):
 			self.tasks.put(Task(Task.SCH_ADD, (Task(Task.SRV_START), 10) ))
 			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] Server Stopped - Waiting 10 secs.....'))
 		else:	
-			self.tasks.put(Task(Task.NET_LINEUP, '[HANDLE] The server is already running'))
+			self.tasks.put(Task(Task.NET_LINEUP, "[HANDLE] The server isn't running"))
 		
 	def __srv_input(self, task):
 		self.server.input(task.data)	

@@ -16,6 +16,17 @@ class Gui:
 		self.Paint = Paint(self.stdscr, self.queue, self)
 		self.client = client
 		self.log = logging.getLogger('GUI')
+		curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+		curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_BLACK)
+		curses.init_pair(9, curses.COLOR_WHITE, curses.COLOR_BLACK)
+		curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
+		curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
+		curses.init_pair(5, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+		curses.init_pair(6, curses.COLOR_CYAN, curses.COLOR_BLACK)
+		curses.init_pair(10, curses.COLOR_WHITE, curses.COLOR_GREEN)
+		curses.init_pair(11, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+		curses.init_pair(12, curses.COLOR_BLACK, curses.COLOR_RED)
+
 		#self.initscreen()
 		
 	def initscreen(self):
@@ -213,11 +224,14 @@ class Log:
 			self.screen.pop(0)
 
 	def remove_escapes(self, line):
-		escapes = ['[33m','[37m','[0m','[32m','[31m','[35m']
+		escapes = ['[33;22m','[37;1m','[0m','[32m','[31m','[35m','[m','[33;1m','[37;22m']
+		replacements = ['[YEL]','[WHI]','[OFF]','[GRE]','[RED]','[MAG]','','[YEL]','[WHI]']
 		w = string.printable[:-5]
 		line = "".join(c for c in line if c in w)	
-		for code in escapes:
-			line = line.replace(code,'')
+		x = 0
+		while x < len(escapes):
+			line = line.replace(escapes[x],replacements[x])
+			x = x+1
 		return line
 		
 	def paint(self):
@@ -229,9 +243,11 @@ class Log:
 		while x >= 0:
 			wrappedline = self.wrapline(display[x])
 			for line in wrappedline:
-				self.window.addstr(y,1,line)
 		
-		
+
+				#self.window.addstr(y,1,line)
+				
+				self.color_print(self.colorize(line),y)
 			#self.window.addstr(y,1,display[x])
 			x = x-1
 			y = y-1
@@ -255,7 +271,38 @@ class Log:
 		#else:
 		#	wrapped.append(line)
 		return wrapped
-				
+		
+	def color_print(self, line, y):
+		cur_attr = 0
+		colors = {'[YEL]':3,'[WHI]':7,'[OFF]':9,'[GRE]':2,'[RED]':1,'[MAG]':5, '[CYN]':6}
+		pos = 0 
+		startpos = 0
+		hpos = 1
+		remaining = line
+		while pos < len(line):
+			if line[pos] == '[':
+				#print line[pos:pos+5]
+				if line[pos:pos+5] in colors:
+					#print 'Attr:%s %s' % (cur_attr, line[startpos:pos])
+					self.window.addstr(y,hpos,line[startpos:pos],curses.color_pair(cur_attr))
+					hpos = hpos + len(line[startpos:pos])
+					cur_attr = colors[line[pos:pos+5]]
+					remaining = line[pos+5:]
+					startpos = pos+5
+
+			pos = pos+1
+		self.window.addstr(y,hpos,remaining,curses.color_pair(cur_attr))
+	#print 'Attr:%s %s' % (cur_attr,remaining) 
+	def colorize(self, line):
+		
+		elements = {'[WARNING]':'[RED]','For help, type "help" or "?"':'[YEL]','enabled':'[GRE]','[HANDLE]':'[CYN]','Connected to Handle ver.':'[GRE]'}
+		for item in elements:
+			pos = line.find(item)
+			if pos != -1:
+				line = line[:pos] + elements[item] + line[pos:pos+len(item)] + '[WHI]' + line[pos+len(item):]
+		
+		return line
+		
 class Input:
 	def __init__(self, window):
 		self.window = window
@@ -298,20 +345,21 @@ class Input:
 			#if self.sbpos == 11:
 			#	self.scrollback.append(self.command)
 			self.sbpos = self.sbpos - 1
-			self.command = self.scrollback[self.sbpos]
-			self.log.debug(self.scrollback[self.sbpos])
-			self.log.debug('Scrolled up to pos: %s' % str(self.sbpos))
+			self.command = self.scrollback[self.sbpos-1]
+			self.log.debug(self.scrollback[self.sbpos-1])
+			self.log.debug('Scrolled up to pos: %s' % str(self.sbpos-1))
 			self.paint()
 		
 	def scrolldown(self):
 		if self.sbpos < 11:
 			self.sbpos = self.sbpos + 1
-			self.command = self.scrollback[self.sbpos]
-			self.log.debug(self.scrollback[self.sbpos])
+			self.command = self.scrollback[self.sbpos-1]
+			self.log.debug(self.scrollback[self.sbpos-1])
 			self.paint()
 			
 class Status:
 	def __init__(self, window):
+		self.log = logging.getLogger('STATUS')
 		self.window = window
 		self.height, self.width = self.window.getmaxyx()
 		self.page = 'sys'
@@ -345,16 +393,16 @@ class Status:
 		
 	def topdraw(self):	
 		self.window.hline(2,0,curses.ACS_HLINE,29)
-		self.window.addstr(1,4,'SYS')
-		self.window.addch(1,8,curses.ACS_VLINE)
-		self.window.addstr(1,10,'HDL')
+		self.window.addstr(1,4,'SYS',curses.color_pair(6))
+		self.window.addch(1,8,curses.ACS_VLINE,)
+		self.window.addstr(1,10,'HDL',curses.color_pair(6))
 		self.window.addch(1,14,curses.ACS_VLINE)
-		self.window.addstr(1,16,'BKT')
+		self.window.addstr(1,16,'BKT',curses.color_pair(6))
 		self.window.addch(1,20,curses.ACS_VLINE)
-		self.window.addstr(1,22,'NFO')
+		self.window.addstr(1,22,'NFO',curses.color_pair(6))
 		self.window.border(' ',0,0,0,curses.ACS_HLINE,0,curses.ACS_HLINE,0)
 		if self.page == 'sys':
-			self.window.addstr(1,4,'SYS',curses.A_REVERSE)
+			self.window.addstr(1,4,'SYS',curses.A_REVERSE,)
 		elif self.page == 'hdl':
 			self.window.addstr(1,10,'HDL',curses.A_REVERSE)
 		elif self.page == 'bkt':
@@ -364,28 +412,28 @@ class Status:
 		self.window.refresh()
 		
 	def draw_sys(self):
-		self.window.addstr(4,3,'Handle Ver:')
-		self.window.addstr(4,15,str(self.sys['handlev']))
-		self.window.addstr(5,3,'Server Ver:')
-		self.window.addstr(5,15,str(self.sys['serverv']))
-		self.window.addstr(6,3,'Port:')
-		self.window.addstr(6,15,str(self.sys['port']))
+		self.window.addstr(4,3,'Handle Ver:',curses.color_pair(6))
+		self.window.addstr(4,15,str(self.sys['handlev']),curses.color_pair(2))
+		self.window.addstr(5,3,'Server Ver:',curses.color_pair(6))
+		self.window.addstr(5,15,str(self.sys['serverv']),curses.color_pair(2))
+		self.window.addstr(6,3,'Port:',curses.color_pair(6))
+		self.window.addstr(6,15,str(self.sys['port']),curses.color_pair(2))
 		#self.window.addstr(7,3,'Uptime:')
 		#self.window.addstr(7,15,str(self.sys['uptime']))
 		
 		x = 11
 		for letter in 'RAM':
-			self.window.addstr(x,4,letter)
+			self.window.addstr(x,4,letter,curses.color_pair(6))
 			x = x+1
 		self.draw_graph(11,6,float(self.sys['maxmem']),float(self.sys['usemem']))
 		x = 11
 		for letter in 'DISK':
-			self.window.addstr(x,12,letter)
+			self.window.addstr(x,12,letter,curses.color_pair(6))
 			x = x+1
 		self.draw_graph(11,14,float(self.sys['maxdsk']),float(self.sys['useddsk']))
 		x = 11
 		for letter in 'PLAYERS':
-			self.window.addstr(x,20,letter)
+			self.window.addstr(x,20,letter,curses.color_pair(6))
 			x = x+1
 		self.draw_graph(11,22,float(self.sys['plimit']),float(len(self.nfo)))
 		self.window.refresh()
@@ -396,7 +444,7 @@ class Status:
 		for event in self.hdl:
 			self.window.addnstr(x,1,event[0],18)
 			time_str = time.strftime('%H:%M:%S',time.localtime(event[1]))
-			self.window.addstr(x,19,time_str)
+			self.window.addstr(x,19,time_str,curses.color_pair(6))
 			x = x+1
 		self.window.refresh()
 
@@ -406,11 +454,11 @@ class Status:
 		for plugin in self.bkt:
 			self.window.addstr(x,0,'[ ]')
 			if plugin['enabled']:
-				self.window.addstr(x,1,'Y')
+				self.window.addstr(x,1,'Y',curses.color_pair(2))
 			else:
-				self.window.addstr(x,1,'N')
-			self.window.addstr(x,4,plugin['name'])
-			self.window.addstr(x,18,plugin['version'])
+				self.window.addstr(x,1,'N',curses.color_pair(1))
+			self.window.addnstr(x,4,plugin['name'],13)
+			self.window.addnstr(x,18,plugin['version'],11,curses.color_pair(6))
 			x = x+1
 		self.window.refresh()
 	
@@ -429,22 +477,46 @@ class Status:
 		fill = int(math.floor(height*percent))
 		blank_lines = (height-fill) + top
 		rbottom = self.height-3
-		
+		drawn = 0
+		total = len(range(top,rbottom))
 		for x in range(top,rbottom):
-			self.window.addch(x,left,curses.ACS_VLINE)
+			yellow = (len(range(top,rbottom))/2) - 1
+			red = len(range(top,rbottom)) - (len(range(top,rbottom))/4)-1
+			if total-drawn == yellow or total-drawn == red-1:
+				self.window.addch(x,left,curses.ACS_SBSS)
+			else:
+				self.window.addch(x,left,curses.ACS_VLINE)
 			self.window.addch(x,left+3,curses.ACS_VLINE)
+			line_color = 10
+			cur_char = ' '
+			
+			if total - drawn > yellow:
+				line_color = 11
+			if total - drawn > red:
+				line_color = 12
+			#self.log.info('y = %s r = %s' % (str(yellow), str(red)))
+			if x < yellow:
+				line_color = 11
+			if x < red:
+					line_color = 12
 			if x > blank_lines:
-				self.window.addstr(x,left+1,' ',curses.A_REVERSE)
-				self.window.addstr(x,left+2,' ',curses.A_REVERSE)
+				self.window.addstr(x,left+1,cur_char,curses.color_pair(line_color))
+				self.window.addstr(x,left+2,' ',curses.color_pair(line_color))
+			drawn = drawn+1
 		self.window.addch(rbottom,left,curses.ACS_LLCORNER)
 		self.window.addch(rbottom,left+1,curses.ACS_HLINE)
 		self.window.addch(rbottom,left+2,curses.ACS_HLINE)
 		self.window.addch(rbottom,left+3,curses.ACS_LRCORNER)
+		num_color = 6
+		if int(percent*100) > 50:
+			num_color = 3
+		if int(percent*100) > 75:
+			num_color = 1
 		if int(percent*100) < 10:
-			self.window.addstr(rbottom+1,left+1,str(0))
-			self.window.addstr(rbottom+1,left+2,str(int(percent*100)))
+			self.window.addstr(rbottom+1,left+1,str(0),curses.color_pair(6))
+			self.window.addstr(rbottom+1,left+2,str(int(percent*100)),curses.color_pair(6))
 		else:
-			self.window.addstr(rbottom+1,left+1,str(int(percent*100)))
+			self.window.addstr(rbottom+1,left+1,str(int(percent*100)),curses.color_pair(num_color))
 		self.window.refresh()
 		
 		
