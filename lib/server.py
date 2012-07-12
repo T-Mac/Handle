@@ -147,7 +147,7 @@ class Backup(threading.Thread):
 				pass
 				
 	def __backup(self, cmd):
-		self.reply_q.put(Task(Task.NET_LINEUP, 'Backup Started at %s'%time.strftime('%H:%M:%S')))
+		self.reply_q.put(Task(Task.NET_LINEUP, '[HANDLE] Backup Started at %s'%time.strftime('%H:%M:%S')))
 		backup_path = cmd.data['Handle']['path_to_bukkit'] + '/backups'
 		worlds = cmd.data['Handle']['worlds'].split(',')
 		world_files = []
@@ -170,6 +170,7 @@ class Backup(threading.Thread):
 			shutil.rmtree(backup_path+'/'+worlds[x])
 			x =x +1
 		os.chdir(cmd.data['Handle']['original_path'])
+		self.reply_q.put(Task(Task.NET_LINEUP, '[HANDLE] Backup Finished at %s'%time.strftime('%H:%M:%S')))
 		
 	def join(self):
 		self.alive.clear()

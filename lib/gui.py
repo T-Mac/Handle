@@ -224,8 +224,8 @@ class Log:
 			self.screen.pop(0)
 
 	def remove_escapes(self, line):
-		escapes = ['[33;22m','[37;1m','[0m','[32m','[31m','[35m','[m','[33;1m','[37;22m']
-		replacements = ['[YEL]','[WHI]','[OFF]','[GRE]','[RED]','[MAG]','','[YEL]','[WHI]']
+		escapes = ['[33;22m','[37;1m','[0m','[32m','[31m','[35m','[m','[33;1m','[37;22m','[31;1m','[32;1m']
+		replacements = ['[YEL]','[WHI]','[OFF]','[GRE]','[RED]','[MAG]','','[YEL]','[WHI]','[RED]','[GRE]']
 		w = string.printable[:-5]
 		line = "".join(c for c in line if c in w)	
 		x = 0
@@ -295,7 +295,7 @@ class Log:
 	#print 'Attr:%s %s' % (cur_attr,remaining) 
 	def colorize(self, line):
 		
-		elements = {'[WARNING]':'[RED]','For help, type "help" or "?"':'[YEL]','enabled':'[GRE]','[HANDLE]':'[CYN]','Connected to Handle ver.':'[GRE]'}
+		elements = {'[WARNING]':'[RED]','For help, type "help" or "?"':'[YEL]','enabled':'[GRE]','[HANDLE]':'[CYN]','Connected to Handle ver.':'[GRE]','Loading':'[YEL]'}
 		for item in elements:
 			pos = line.find(item)
 			if pos != -1:
@@ -507,14 +507,14 @@ class Status:
 		self.window.addch(rbottom,left+1,curses.ACS_HLINE)
 		self.window.addch(rbottom,left+2,curses.ACS_HLINE)
 		self.window.addch(rbottom,left+3,curses.ACS_LRCORNER)
-		num_color = 6
+		num_color = 2
 		if int(percent*100) > 50:
 			num_color = 3
 		if int(percent*100) > 75:
 			num_color = 1
 		if int(percent*100) < 10:
-			self.window.addstr(rbottom+1,left+1,str(0),curses.color_pair(6))
-			self.window.addstr(rbottom+1,left+2,str(int(percent*100)),curses.color_pair(6))
+			self.window.addstr(rbottom+1,left+1,str(0),curses.color_pair(2))
+			self.window.addstr(rbottom+1,left+2,str(int(percent*100)),curses.color_pair(2))
 		else:
 			self.window.addstr(rbottom+1,left+1,str(int(percent*100)),curses.color_pair(num_color))
 		self.window.refresh()

@@ -262,7 +262,7 @@ class Handle(threading.Thread):
 		if len(self.database.data['screen']) == 100:
 			self.database.data['screen'].pop(0)
 			
-		s = 'Connected to Handle ver. %s' % self.database.config['Handle']['version']
+		s = '[HANDLE] Connected to Handle ver. %s' % self.database.config['Handle']['version']
 		encodeds = s.encode('hex_codec')
 		if not self.database.data['screen'][len(self.database.data['screen'])-1] == encodeds:
 			self.database.data['screen'].append(encodeds)
