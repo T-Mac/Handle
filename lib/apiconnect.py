@@ -62,19 +62,20 @@ class Api(threading.Thread):
 			#method = self.api.getMethod(cmd.data.method)
 			#if not method == None:
 			try:
+				self.log.debug('Calling Method: %s' % (cmd.data.method))
 				data = self.api.call(cmd.data.method)
+			except Exception:
+				self.log.debug('Error calling %s'%cmd.data.method)
+				self.cmd_q.put(ApiCmd(ApiCmd.UPDATE, cmd.data))
+			else:
 				cmd.data.data = data
 				#self.reply_q.put(Task(Task.NET_LINEUP, str(data)))
 				self.reply_q.put(Task(Task.CLT_UPDATE, (cmd.data.name, cmd.data.data)))
 				self.log.debug('Updated: %s - %s' % (cmd.data.name, str(data)))
-			except Exception:
-				self.log.debug('Error calling %s'%cmd.data.method)
-				self.cmd_q.put(ApiCmd(ApiCmd.UPDATE, cmd.data))
-			#else:
-			#	self.log.debug('getMethod returned None')
+
 	
 	def __connect(self, cmd):
-		#self.log.debug('MinecraftApi.MinecraftJsonApi(host = %s, port = %s, username = %s, password = %s, salt = %s)'%cmd.data)
+		self.log.debug('MinecraftApi.MinecraftJsonApi(host = %s, port = %s, username = %s, password = %s, salt = %s)'%cmd.data)
 		try:
 			self.api = MinecraftApi.MinecraftJsonApi(host = cmd.data[0], port = int(cmd.data[1]), username = cmd.data[2], password = cmd.data[3], salt = cmd.data[4])
 			self.connected.set()
@@ -82,7 +83,7 @@ class Api(threading.Thread):
 			self.cmd_q.put(ApiCmd(ApiCmd.SETUP))
 		except URLError:
 			tsk = Task(Task.API_CONNECT)
-			self.reply_q.put(Task(Task.SCH_ADD, (tsk, 5)))
+			self.reply_q.put(Task(Task.SCH_ADD, (tsk, 15)))
 			self.log.debug('Api Connection Failed: Rescheduled')
 			
 	def __disconnect(self, cmd):
@@ -112,8 +113,13 @@ class Api(threading.Thread):
 	def __stream(self, cmd):
 		self.log.debug('Creating Stream API Connection for %s'%cmd.data)
 		obj = StreamObj(cmd.data, self.alive, self.reply_q, self.api)
-		obj.connect()
-		obj.start()
+		self.log.debug('OBJECT CREATED')
+		if obj.connect():
+			self.log.debug('STREAM OBJECT CONNECTED')
+			obj.start()
+		else:
+			self.log.debug('Stream connect FAILED, rescheduling')
+			self.cmd_q.put(cmd)
 		
 	def join(self):
 		self.alive.clear()
@@ -137,7 +143,7 @@ class StreamObj(threading.Thread):
 		self.alive = alive
 		self.reply_q = reply_q
 		self.stream = None
-		self.log = logging.getLogger('Stream API: %s'%self.type)
+		self.log = logging.getLogger('STREAM API')
 		self.api = api
 		threading.Thread.__init__(self)
 		
@@ -150,12 +156,16 @@ class StreamObj(threading.Thread):
 				if self.type == 'connections':
 					self.reply_q.put(Task(Task.CLT_UPDATE,('players',{'name':packet['success']['player'], 'action':packet['success']['action'], 'time':packet['success']['time']})))
 	def connect(self):
-		
-		self.stream = self.api.subscribe(self.type)
-		if self.stream:
-			return True
-		else:
+		self.log.debug('STREAM API CONNECTING')
+		try:
+			self.stream = self.api.subscribe(self.type)
+			self.log.debug('STREAM API CONNECTED')
+		except Exception:
 			return False
+		else:
+			return True
+
+
 
 	
 class ApiCmd(object):

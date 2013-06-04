@@ -106,6 +106,9 @@ class Paint(threading.Thread):
 		self.wininput.nodelay(True)
 		self.Input = Input(self.wininput)
 		self.Status = Status(self.winstatus)
+		self.clockrefresh = False
+		self.clock = ClockUpdate(self)
+		self.clock.start()
 		self.exit = False
 
 		threading.Thread.__init__(self)
@@ -146,14 +149,18 @@ class Paint(threading.Thread):
 					self.Status.page = 'bkt'
 				elif self.Status.page == 'bkt':
 					self.Status.page = 'hdl'
+					self.clockrefresh = True
 				elif self.Status.page == 'hdl':
 					self.Status.page = 'sys'
+					self.clockrefresh = False
 				self.queue.put({'type':'status'})
 				
 			elif code == curses.KEY_RIGHT:
 				if self.Status.page == 'sys':
+					self.clockrefresh = True
 					self.Status.page = 'hdl'
 				elif self.Status.page == 'hdl':
+					self.clockrefresh = False
 					self.Status.page = 'bkt'
 				elif self.Status.page == 'bkt':
 					self.Status.page = 'nfo'
@@ -191,6 +198,7 @@ class Paint(threading.Thread):
 			
 	def join(self):
 		self.exit = True
+		self.clock.join()
 		threading.Thread.join(self)
 	
 		
@@ -224,8 +232,8 @@ class Log:
 			self.screen.pop(0)
 
 	def remove_escapes(self, line):
-		escapes = ['[33;22m','[37;1m','[0m','[32m','[31m','[35m','[m','[33;1m','[37;22m','[31;1m','[32;1m']
-		replacements = ['[YEL]','[WHI]','[OFF]','[GRE]','[RED]','[MAG]','','[YEL]','[WHI]','[RED]','[GRE]']
+		escapes = ['[0;33;22m','[0;37;1m','[0m','[32m','[31m','[35m','[m','[33;1m','[37;22m','[31;1m','[32;1m','[0;33;1m','[0;37;22m']
+		replacements = ['[YEL]','[WHI]','[OFF]','[GRE]','[RED]','[MAG]','','[YEL]','[WHI]','[RED]','[GRE]','[YEL]','[WHI]']
 		w = string.printable[:-5]
 		line = "".join(c for c in line if c in w)	
 		x = 0
@@ -295,12 +303,11 @@ class Log:
 	#print 'Attr:%s %s' % (cur_attr,remaining) 
 	def colorize(self, line):
 		
-		elements = {'[WARNING]':'[RED]','For help, type "help" or "?"':'[YEL]','enabled':'[GRE]','[HANDLE]':'[CYN]','Connected to Handle ver.':'[GRE]','Loading':'[YEL]'}
+		elements = {'[WARNING]':'[RED]','For help, type "help" or "?"':'[YEL]','enabled':'[GRE]','[HANDLE]':'[CYN]','Connected to Handle ver.':'[GRE]','Loading':'[YEL]','Unknown Command,':'[RED]'}
 		for item in elements:
 			pos = line.find(item)
 			if pos != -1:
 				line = line[:pos] + elements[item] + line[pos:pos+len(item)] + '[WHI]' + line[pos+len(item):]
-		
 		return line
 		
 class Input:
@@ -443,7 +450,8 @@ class Status:
 		x = 6
 		for event in self.hdl:
 			self.window.addnstr(x,1,event[0],18)
-			time_str = time.strftime('%H:%M:%S',time.localtime(event[1]))
+			remaining = event[1]-time.time()
+			time_str = time.strftime('%H:%M:%S',time.localtime(remaining))
 			self.window.addstr(x,19,time_str,curses.color_pair(6))
 			x = x+1
 		self.window.refresh()
@@ -520,5 +528,19 @@ class Status:
 		self.window.refresh()
 		
 		
-	
+class ClockUpdate(threading.Thread):
+	def __init__(self,parent):
+		self.parent = parent
+		self.exit = False
+		threading.Thread.__init__(self)
 		
+		
+	def run(self):
+		while not self.exit:
+			time.sleep(1)
+			if self.parent.clockrefresh:
+				self.parent.queue.put({'type':'status'})
+			
+	def join(self):
+		self.exit = True
+		threading.Thread.join(self)

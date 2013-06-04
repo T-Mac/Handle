@@ -15,8 +15,9 @@ import os
 import lib.daemon
 import lib.apiconnect as api
 from lib.apiconnect import ApiCmd, ApiObj
-
-LOGLVL = logging.INFO	#<----------------------------------------- LOGGING LEVEL------------------------------------
+import locale
+locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+LOGLVL = logging.DEBUG	#<----------------------------------------- LOGGING LEVEL------------------------------------
 
 class NotImplemented(Exception):
 	pass
@@ -279,15 +280,23 @@ class Handle(threading.Thread):
 			self.tasks.put(Task(Task.SRV_START))
 		elif command == 'stop':
 			self.tasks.put(Task(Task.SRV_STOP))
-		elif command == 'restart':
-			self.tasks.put(Task(Task.SRV_RESTART))
+		elif command[:7] == 'restart':
+			if len(command) == 7:
+				self.tasks.put(Task(Task.SRV_RESTART))
+			else:
+				self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] Resarting server in %s secs' %command[8:] ))
+				delay = int(command[8:])
+				self.tasks.put(Task(Task.SCH_ADD,(Task(Task.SRV_RESTART), delay) ))
+
 		elif command == 'exit':
 			self.tasks.put(Task(Task.HDL_EXIT))
-		elif command == 'help':
-			self.tasks.put(Task(Task.NET_LINEUP,'===============================Handle Commands==============================='))
+		elif command == 'help' or command == '?':
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE]=======================Handle Commands==============================='))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] Optional arguements in brackets []'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE]'))
 			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] start                                               start the server'))
 			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] stop                                                 stop the server'))
-			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] restart                                           restart the server'))
+			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] restart [delay]                                   restart the server'))
 			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] exit                                stop the server and close Handle'))
 			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] close                      close the client but leave Handle running'))
 			self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] Use the Left/Right Keys to change sidebar tabs'))
@@ -309,8 +318,10 @@ class Handle(threading.Thread):
 			self.tasks.put(Task(Task.SRV_BACKUP))
 			
 		else:
-			self.tasks.put(Task(Task.SRV_INPUT, command))
-	
+			if self.server.running:
+				self.tasks.put(Task(Task.SRV_INPUT, command))
+			else:
+				self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] Unknown Command, For help, type "help" or "?"'))
 
 				
 				
