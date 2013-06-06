@@ -229,7 +229,7 @@ class MinecraftJsonApi (object):
 		'''
 		url = self.__createURL(method, args)
 		result = urlopen(url).read()
-		return result
+		return result['result']
 				
 				
 	def call (self, method, *args):

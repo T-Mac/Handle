@@ -65,22 +65,27 @@ class Database:
 		self.data = {}
 		self.data['screen'] = None
 		self.reply_q = reply_q
+		self.configfile = ConfigParser.RawConfigParser()
 		
 	def loadconfig(self):
 		self.config = {}
-		configfile = ConfigParser.RawConfigParser()
-		configfile.read('handle.cfg')
-		sections = configfile.sections()
+		self.configfile.read('handle.cfg')
+		sections = self.configfile.sections()
 		for section in sections:
-			options = configfile.options(section)
+			options = self.configfile.options(section)
 			internal = {}
 			for option in options:
-				internal[option] = configfile.get(section,option)
+				internal[option] = self.configfile.get(section,option)
 			self.config[section] = internal
 		self.config['Handle']['original_path'] = os.getcwd()
 		if self.config['Handle']['path_to_bukkit'][-1:] == '/':
 			self.config['Handle']['path_to_bukkit'] = self.config['Handle']['path_to_bukkit'][:-1]
-		
+	
+	def change(self,section,option,value):
+		self.config[section][option] = value
+		self.configfile.set(section,option,value)
+		with open('handle.cfg', 'wb') as file:
+			self.configfile.write(file)
 		
 	def create_default_events(self):	
 		if self.config['Backup']['enabled'] == 'True':

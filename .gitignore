@@ -1,2 +1,5 @@
 *.pyc
 *.log
+*test*
+*.old
+handle.pid
