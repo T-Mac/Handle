@@ -6,15 +6,17 @@ then
 	path="/proc/"${pid}
 	if [ -d "$path" ]
 	then
-		echo "daemon running"
+		#echo "daemon running"
 		python handle.py
 	else
-		echo "daemon stopped"
+		#echo "daemon stopped"
 		rm -f handle.pid
 		python handle.py
+		sleep 1
 		python handle.py
 	fi
 else
 python handle.py
+sleep 1
 python handle.py
 fi

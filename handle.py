@@ -42,6 +42,7 @@ class Handle(threading.Thread):
 		#create database
 		self.database = server.Database(self.tasks)
 		self.database.loadconfig()
+		self.checkin()
 		self.database.create_default_events()
 		
 		#create sever controller
@@ -105,25 +106,7 @@ class Handle(threading.Thread):
 		self.schedule.start()
 		self.api.start()
 		self.backup.start()
-		#checkin to stats
-		if stats.has_internet():
-			self.log.debug('Host has internet, checking if checkin enabled')
-			if self.database.config['Handle']['stats_enabled'] == 'True':
-				self.log.debug('Stats checkin: Enabled, checkin for id')
-				if self.database.configfile.has_option('Handle','stats_id'):
-					id = self.database.config['Handle']['stats_id']
-					self.log.debug('Has ID: %s'%id)
-					
-				else:
-					self.log.debug('No ID Found, Generating...')
-					id = stats.gen_id()
-					self.log.debug('ID Generated: %s'%id)
-					self.database.change('Handle','stats_id',id)
-				self.log.debug('Checking in...')
-				if stats.checkin(id):
-					self.log.debug('Checkin Succeeded')
-				else:
-					self.log.error('Checkin FAILED')
+
 		while self.alive.isSet():
 			try:
 				task = self.tasks.get(True, 0.1)
@@ -345,7 +328,27 @@ class Handle(threading.Thread):
 				self.tasks.put(Task(Task.SRV_INPUT, command))
 			else:
 				self.tasks.put(Task(Task.NET_LINEUP,'[HANDLE] Unknown Command, For help, type "help" or "?"'))
-
+	
+	def checkin(self):
+		#checkin to stats
+		if stats.has_internet():
+			self.log.debug('Host has internet, checking if checkin enabled')
+			if self.database.config['Handle']['stats_enabled'] == 'True':
+				self.log.debug('Stats checkin: Enabled, checkin for id')
+				if self.database.configfile.has_option('Handle','stats_id'):
+					id = self.database.config['Handle']['stats_id']
+					self.log.debug('Has ID: %s'%id)
+					
+				else:
+					self.log.debug('No ID Found, Generating...')
+					id = stats.gen_id()
+					self.log.debug('ID Generated: %s'%id)
+					self.database.change('Handle','stats_id',id)
+				self.log.debug('Checking in...')
+				if stats.checkin(id):
+					self.log.debug('Checkin Succeeded')
+				else:
+					self.log.error('Checkin FAILED')
 				
 				
 class Client(object):

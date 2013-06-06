@@ -94,7 +94,7 @@ class Database:
 			curtime = time.time()
 			runtime = curtime+int(self.config['Backup']['interval'])*60
 			runtime = time.localtime(runtime)
-			self.reply_q.put(Task(Task.NET_LINEUP,'Server Backup at %s' % time.strftime('%H:%M:%S',runtime)))
+			self.reply_q.put(Task(Task.NET_LINEUP,'[HANDLE] Server Backup at %s' % time.strftime('%H:%M:%S',runtime)))
 		if self.config['Restart']['enabled'] == 'True':
 			tsk = Task(Task.SRV_RESTART)
 			self.reply_q.put(Task(Task.SCH_ADD,(tsk, int(self.config['Restart']['interval'])*60, True, 'Auto_Restart')))
@@ -102,7 +102,7 @@ class Database:
 			curtime = time.time()
 			runtime = curtime+int(self.config['Restart']['interval'])*60
 			runtime = time.localtime(runtime)
-			self.reply_q.put(Task(Task.NET_LINEUP,'Server Restart at %s' % time.strftime('%H:%M:%S',runtime)))
+			self.reply_q.put(Task(Task.NET_LINEUP,'[HANDLE] Server Restart at %s' % time.strftime('%H:%M:%S',runtime)))
 			
 def Restart_Gen(reply_q, time):
 	events = []
