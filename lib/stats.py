@@ -4,7 +4,7 @@ import uuid
 
 def checkin(id):
 	try:
-		result=urllib2.urlopen('http://localhost:5000/checkin?id=%s' %id).read()
+		result=urllib2.urlopen('http://stats.kennytheserver.com/checkin?id=%s' %id).read()
 		return True
 	except:
 		pass
