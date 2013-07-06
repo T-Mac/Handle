@@ -15,7 +15,7 @@ class Network:
 		self.pre = pickle.dumps({'id':'preamble'})
 		self.eol = pickle.dumps({'id':'eol')}
 		self.netlock = threading.Lock()
-		
+
 	def run(self):
 		while not self.exit:
 			self.sock.listen(1)
@@ -29,9 +29,9 @@ class Network:
 				else:
 					self.connected = False
 		self.conn.shutdown(SHUT_RDWR)
-		self.conn.close() 
-					
-							
+		self.conn.close()
+
+
 	def sendData(self, packet):
 		self.netlock.acquire()
 		self.conn.send(self.pre)
@@ -39,13 +39,13 @@ class Network:
 		self.conn.send(self.eol)
 		self.netlock.release()
 
-				
-				
-				
+
+
+
 class Interpret:
 	def __init__(self, handle):
 		self.handle = handle
-		
+
 	def parse(self, packet):
 		data = pickle.loads(packet)
 		if data['id'] == 'preamble':
@@ -70,4 +70,3 @@ class Interpret:
 		if data['id'] == 'input':
 			self.handle.addtask('handle.command')
 
-	
