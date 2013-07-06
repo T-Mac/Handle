@@ -29,12 +29,12 @@ class Bukkit:
 			self.running = True
 			if self.handle:
 				self.serverout = ServerOut(self.handle)
-			
+
 			self.log.debug('ServerOut Started')
 			self.bukkit = subprocess.Popen(self.startcmd, shell=False, cwd=self.database.config['Handle']['path_to_bukkit'], stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-			if self.handle: 
+			if self.handle:
 				self.serverout.start()
-		
+
 	def stopserver(self):
 		if self.running:
 			self.running = False
@@ -43,7 +43,7 @@ class Bukkit:
 			os.write(self.pipe_write, 'exit')
 			if self.handle:
 				self.handle.addtask(Task(Task.NET_LINEUP, '[HANDLE] Server Closed'))
-			
+
 
 
 	def output(self):
@@ -53,18 +53,18 @@ class Bukkit:
 		else:
 			os.read(self.pipe_read, 1024)
 			return 0x00
-	
+
 	def input(self,data):
 		if self.running:
 			self.bukkit.stdin.write(data + '\n')
-		
+
 class Database:
 	def __init__(self, reply_q):
 		self.data = {}
 		self.data['screen'] = None
 		self.reply_q = reply_q
 		self.configfile = ConfigParser.RawConfigParser()
-		
+
 	def loadconfig(self):
 		self.config = {}
 		self.configfile.read('handle.cfg')
@@ -77,14 +77,14 @@ class Database:
 			self.config[section] = internal
 		if self.config['Handle']['path_to_bukkit'][-1:] == '/':
 			self.config['Handle']['path_to_bukkit'] = self.config['Handle']['path_to_bukkit'][:-1]
-	
+
 	def change(self,section,option,value):
 		self.config[section][option] = value
 		self.configfile.set(section,option,value)
 		with open('handle.cfg', 'wb') as file:
 			self.configfile.write(file)
-		
-	def create_default_events(self):	
+
+	def create_default_events(self):
 		if self.config['Backup']['enabled'] == 'True':
 			tsk = Task(Task.SRV_BACKUP)
 			self.reply_q.put(Task(Task.SCH_ADD,(tsk, int(self.config['Backup']['interval'])*60, True, 'Auto_Backup')))
@@ -100,7 +100,7 @@ class Database:
 			runtime = curtime+int(self.config['Restart']['interval'])*60
 			runtime = time.localtime(runtime)
 			self.reply_q.put(Task(Task.NET_LINEUP,'[HANDLE] Server Restart at %s' % time.strftime('%H:%M:%S',runtime)))
-			
+
 def Restart_Gen(reply_q, time):
 	events = []
 	if time > 10:
@@ -109,7 +109,7 @@ def Restart_Gen(reply_q, time):
 		events.append(5)
 	if time > 1:
 		events.append(1)
-	
+
 	for event in events:
 		tsk = Task(Task.NET_LINEUP,'Server Restart in %s min' % str(event*60))
 		reply_q.put(Task(Task.SCH_ADD, (tsk, (time-event)*60)))
@@ -122,7 +122,7 @@ class ServerOut(threading.Thread):
 
 	def run(self):
 		while not self.exit:
-		
+
 			output = self.handle.server.output()
 			if not output == 0x00:
 				self.handle.addtask(Task(Task.NET_LINEUP, output))
@@ -134,7 +134,7 @@ class Backup(threading.Thread):
 		self.alive = threading.Event()
 		self.alive.set()
 		self.log = logging.getLogger('BACKUP')
-		
+
 		self.handlers = {
 				Task.SRV_BACKUP:self.__backup
 			}
@@ -144,10 +144,10 @@ class Backup(threading.Thread):
 			try:
 				cmd = self.cmd_q.get(True, 0.1)
 				self.handlers[cmd.type](cmd)
-				
+
 			except Queue.Empty:
 				pass
-				
+
 	def __backup(self, cmd):
 		self.reply_q.put(Task(Task.NET_LINEUP, '[HANDLE] Backup Started at %s'%time.strftime('%H:%M:%S')))
 		backup_path = cmd.data['Handle']['path_to_bukkit'] + '/backups'
@@ -159,7 +159,7 @@ class Backup(threading.Thread):
 		self.log.debug(str(world_files))
 		backup_command = ''
 		x = 0
-		for file in world_files:	
+		for file in world_files:
 			shutil.copytree(file, backup_path+'/'+worlds[x])
 			self.log.debug('shutil.copytree(%s, %s'%(file, backup_path+'/'+worlds[x]))
 			backup_command = backup_command + (worlds[x] + ' ')
@@ -171,9 +171,8 @@ class Backup(threading.Thread):
 		for file in world_files:
 			shutil.rmtree(backup_path+'/'+worlds[x])
 			x =x +1
-		os.chdir(cmd.data['Handle']['original_path'])
 		self.reply_q.put(Task(Task.NET_LINEUP, '[HANDLE] Backup Finished at %s'%time.strftime('%H:%M:%S')))
-		
+
 	def join(self):
 		self.alive.clear()
 		threading.Thread.join(self)
