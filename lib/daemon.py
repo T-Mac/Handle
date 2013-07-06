@@ -4,7 +4,7 @@ Configurable daemon behaviors:
 
    1.) The current working directory set to the "/" directory.
    2.) The current file creation mode mask set to 0.
-   3.) Close all open files (1024). 
+   3.) Close all open files (1024).
    4.) Redirect standard I/O streams to "/dev/null".
 
 A failed call to fork() now raises an exception.
@@ -56,7 +56,7 @@ def createDaemon():
    except OSError, e:
       raise Exception, "%s [%d]" % (e.strerror, e.errno)
 
-   if (pid == 0):	# The first child.
+   if (pid == 0):   # The first child.
       # To become the session leader of this new session and the process group
       # leader of the new process group, we call os.setsid().  The process is
       # also guaranteed not to have a controlling terminal.
@@ -154,7 +154,7 @@ def createDaemon():
    maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
    if (maxfd == resource.RLIM_INFINITY):
       maxfd = MAXFD
-  
+
    # Iterate through and close all file descriptors.
    for fd in range(0, maxfd):
       try:
@@ -185,7 +185,7 @@ if __name__ == "__main__":
    # executed with superuser privileges.  The file will contain the following
    # daemon related process parameters: return code, process ID, parent
    # process group ID, session ID, user ID, effective user ID, real group ID,
-   # and the effective group ID.  Notice the relationship between the daemon's 
+   # and the effective group ID.  Notice the relationship between the daemon's
    # process ID, process group ID, and its parent's process ID.
 
    procParams = """
