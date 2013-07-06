@@ -20,58 +20,58 @@ class MinecraftStream(object):
 	def __getattribute__(self, name):
 		if name not in ['readjson', '_original_stream']:
 			return getattr(
-				object.__getattribute__(self, '_original_stream'), 
+				object.__getattribute__(self, '_original_stream'),
 				name
 			)
 		else:
 			return object.__getattribute__(self, name)
-		
+
 	def __init__(self, stream):
 		self._original_stream = stream
-		
+
 	def readjson(self, *args, **kwargs):
 		ret = self._original_stream.readline(*args, **kwargs)
 		return json.loads(ret)
-	
+
 class MinecraftJsonApi (object):
 	'''
 	Python Interface to JSONAPI for Bukkit (Minecraft)
-	
+
 	Based off of the PHP interface by Alec Gorge <alecgorge@gmail.com>
 		https://github.com/alecgorge/jsonapi/raw/master/sdk/php/JSONAPI.php
-	
+
 	(c) 2011 Accalia.de.Elementia <Accalia.de.Elementia@gmail.com>
-	
+
 	This work is licensed under a Creative Commons Attribution
 	3.0 Unported License <http://creativecommons.org/licenses/by/3.0/>
-	
+
 	JSONAPI homepage:
 		http://ramblingwood.com/minecraft/jsonapi/
 	'''
-	
+
 	__basic_url = 'http://{host}:{port}/api/call?{query}'
 	__multi_url = 'http://{host}:{port}/api/call-multiple?{query}'
 	__subscribe_url = '/api/subscribe?{query}'
 	__letters = list('abcdefghijklmnopqrstuvwxyz')
-		
+
 	def __createkey(self, method):
 		'''
 		Create an authentication hash for the given method.
 		'''
-		return sha256('{username}{method}{password}{salt}'.format( 
-				username = self.username, 
+		return sha256('{username}{method}{password}{salt}'.format(
+				username = self.username,
 				method = method,
 				password = self.password,
 				salt = self.salt
 			)
 		).hexdigest()
-	
+
 	def __createURL(self, method, args):
 		'''
 		Create the full URL for calling a method.
-		'''			
+		'''
 		key = self.__createkey(method)
-		
+
 		return self.__basic_url.format(
 			host = self.host,
 			port = self.port,
@@ -81,20 +81,20 @@ class MinecraftJsonApi (object):
 				('key', key),
 			])
 		)
-	
+
 	def __createStreamURL(self, source):
 		'''
 		Create the full URL for subscribing to a stream.
-		'''			
+		'''
 		key = self.__createkey(source)
-		
+
 		return self.__subscribe_url.format(
 			query = urlencode([
 				('source', source),
 				('key', key),
 			])
 		)
-	
+
 
 	def __createMultiCallURL(self, methodlist, arglist):
 		'''
@@ -115,18 +115,18 @@ class MinecraftJsonApi (object):
 
 	def __createsocket(self):
 		'''
-		Setup a socket connection to the server and return a file like 
+		Setup a socket connection to the server and return a file like
 		object for reading and writing.
-		
-		Copied with minor edits from examples on: 
+
+		Copied with minor edits from examples on:
 			http://docs.python.org/library/socket.html
 		'''
 		'''try:
 			flags = socket.AI_ADDRCONFIG
 		except AttributeError:
 			flags = 0
-		for res in socket.getaddrinfo(self.host, (self.port+1), 
-				socket.AF_UNSPEC, socket.SOCK_STREAM, 
+		for res in socket.getaddrinfo(self.host, (self.port+1),
+				socket.AF_UNSPEC, socket.SOCK_STREAM,
 				socket.IPPROTO_TCP,	flags):
 			af, socktype, proto, canonname, sa = res'''
 		try:
@@ -143,22 +143,22 @@ class MinecraftJsonApi (object):
 			#continue
 		#break
 			if not sock:
-				raise Exception('Connect Failed') 
-		self.log.debug('raw socket connected')		
+				raise Exception('Connect Failed')
+		self.log.debug('raw socket connected')
 		return MinecraftStream(sock.makefile('rwb'))
 
 	def __createMethodAttributes(self, method):
 		'''
-		Yet another translation method. 
-		
-		Transform the method definition JSON into a dictionary 
-		containing only the attributes needed for the wrapper. 
+		Yet another translation method.
+
+		Transform the method definition JSON into a dictionary
+		containing only the attributes needed for the wrapper.
 		'''
 		attrs = {}
 		attrs['name'] = method.get('name', '')
 		if attrs['name'] < 0:
 			raise Exception('Malformed method definition in JSON')
-		
+
 		attrs['description'] = method.get('desc','')
 		attrs['namespace'] = method.get('namespace','')
 		attrs['enabled'] = method.get('enabled',False)
@@ -178,30 +178,30 @@ class MinecraftJsonApi (object):
 			'{1} ({0})'.format(a[0], a[1]) for a in args
 		])
 		return attrs
-	
+
 	def __createMethod (self, method):
 		'''
 		Create a dynamic method based on provided definition.
-		
+
 		TODO: Is there a better way to do this? Possibly via closure to
 		avoid exec
 		'''
 		def makeMethod (method):
 			call_name = method['call_name']
 			def _method (self, *args):
-				return self.call(call_name,*args)				
-			
+				return self.call(call_name,*args)
+
 			_method.__name__ = str(method['method_name'])
 			_method.__doc__ = """{description}
-	
+
 			{returns}
-	
+
 			Parameters:
 			{params}
 			""".format(**method)
-			
+
 			return _method
-		
+
 		attributes = self.__createMethodAttributes(method)
 		if method['enabled']:
 			rv_method = makeMethod(attributes)
@@ -211,9 +211,9 @@ class MinecraftJsonApi (object):
 		del attributes['call_name']
 		del attributes['args']
 		return attributes
-	
-	
-	def __init__(self, host='localhost', port=20059, username='admin', 
+
+
+	def __init__(self, host='localhost', port=20059, username='admin',
 		password='demo', salt=''):
 		self.host = host
 		self.username = username
@@ -230,8 +230,8 @@ class MinecraftJsonApi (object):
 		url = self.__createURL(method, args)
 		result = urlopen(url).read()
 		return result
-				
-				
+
+
 	def call (self, method, *args):
 		'''
 		Make a remote call and return the JSON response.
@@ -239,10 +239,10 @@ class MinecraftJsonApi (object):
 		data = self.rawCall(method, *args)
 		result = json.loads(data)
 		if result['result'] =='success':
-			return result['success']	
+			return result['success']
 		else:
 			raise Exception('(%s) %s' %(result['result'], result[result['result']]))
-	
+
 
 	def call_multiple(self, methodlist, arglist):
 		'''
@@ -255,8 +255,8 @@ class MinecraftJsonApi (object):
 	def subscribe (self, feed):
 		'''
 		Subscribe to the remote stream.
-		
-		Return a file like object for reading responses from. Use 
+
+		Return a file like object for reading responses from. Use
 		read/readline for raw values, use readjson for parsed values.
 		'''
 		# This doesn't work right, I don't know why.... yet.
@@ -265,7 +265,7 @@ class MinecraftJsonApi (object):
 		if feed not in ['console', 'chat', 'connections']:
 			raise NotImplementedError(
 				'Subscribing to feed \'%s\' is not supported.' % feed)
-	
+
 		url = self.__createStreamURL(feed)
 		self.log.debug('creating socket')
 		stream = self.__createsocket()
@@ -275,7 +275,7 @@ class MinecraftJsonApi (object):
 		stream.flush()
 		self.log.debug('Stream connection created successfully')
 		return stream
-	
+
 	def getLoadedMethods(self, active_only=True):
 		'''
 		Get all methods recognized by the remote server.
@@ -285,11 +285,11 @@ class MinecraftJsonApi (object):
 		else:
 			test = lambda x: True
 		return [a for a in self.__methods if test(a)]
-	
+
 	def getMethod(self, name):
 		'''
 		get method definition for the provided method name.
-		
+
 		If the method is in a name space the namespace must be provided
 		too, the name having the form "{namespace}_{name}"
 		'''
@@ -311,17 +311,17 @@ if __name__ == '__main__':
 	 		params[k] = filterFuncs[k](value)
 	 	else:
 			params[k] = paramDefaults[k]
- 	
+
  	api = MinecraftJsonApi(
- 		host = params['host'], 
- 		port = params['port'], 
- 		username = params['username'], 
- 		password = params['password'], 
+ 		host = params['host'],
+ 		port = params['port'],
+ 		username = params['username'],
+ 		password = params['password'],
  		salt = params['salt']
  	)
-	
+
 	print([m['method_name'] for m in api.getLoadedMethods()])
-	print (api.getMethod('kickPlayer'))	
+	print (api.getMethod('kickPlayer'))
 	x = True
 	while x:
 		method = raw_input('>')
