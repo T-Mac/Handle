@@ -56,12 +56,12 @@ class Task(object):
 		22:'API_REMOVE',
 		23:'API_GET',
 		24:'API_UPDATE',
-		25:'API_CONNECT',	
+		25:'API_CONNECT',
 		26:'ON_CONNECT',
 		27:'SCH_UPDATE'
 		}
-		
-	def __init__(self, type, data=None):	
+
+	def __init__(self, type, data=None):
 		self.type = type
 		self.data = data
 		#self.types = self.stype['type']
