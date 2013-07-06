@@ -31,9 +31,7 @@ class Bukkit:
 				self.serverout = ServerOut(self.handle)
 			
 			self.log.debug('ServerOut Started')
-			os.chdir(self.database.config['Handle']['path_to_bukkit'])
-			self.bukkit = subprocess.Popen(self.startcmd, shell=False, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
-			os.chdir(self.database.config['Handle']['original_path'])
+			self.bukkit = subprocess.Popen(self.startcmd, shell=False, cwd=self.database.config['Handle']['path_to_bukkit'], stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
 			if self.handle: 
 				self.serverout.start()
 		
@@ -77,7 +75,6 @@ class Database:
 			for option in options:
 				internal[option] = self.configfile.get(section,option)
 			self.config[section] = internal
-		self.config['Handle']['original_path'] = os.getcwd()
 		if self.config['Handle']['path_to_bukkit'][-1:] == '/':
 			self.config['Handle']['path_to_bukkit'] = self.config['Handle']['path_to_bukkit'][:-1]
 	
