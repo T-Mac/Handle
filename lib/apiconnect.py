@@ -17,7 +17,7 @@ class Api(threading.Thread):
 		self.alive = threading.Event()
 		self.alive.set()
 		self.connected = threading.Event()
-		
+
 		self.handlers = {
 			ApiCmd.REGISTER:self.__register,
 			ApiCmd.REMOVE:self.__remove,
@@ -29,7 +29,7 @@ class Api(threading.Thread):
 			ApiCmd.RECONNECT:self.__reconnect,
 			ApiCmd.STREAM:self.__stream,
 			}
-		
+
 		threading.Thread.__init__(self)
 	def run(self):
 		while self.alive.isSet():
@@ -37,10 +37,10 @@ class Api(threading.Thread):
 				cmd = self.cmd_q.get(True, 0.1)
 				self.log.debug('Got Task: %s' % cmd.stype[cmd.type])
 				self.handlers[cmd.type](cmd)
-				
+
 			except Queue.Empty:
 				pass
-		
+
 	def __register(self, cmd):
 		self.apiobjs.append(cmd.data)
 		tskreg = Task(Task.API_UPDATE, cmd.data)
@@ -52,11 +52,11 @@ class Api(threading.Thread):
 	def __remove(self, cmd):
 		self.apiobjs.remove(cmd.data)
 		self.log.debug('Removed Method: %s' % cmd.data.method)
-		
+
 	def __get_data(self, cmd):
 		if self.connected.isSet():
 			self.api.getMethod(cmd.data.method)
-		
+
 	def __update_data(self, cmd):
 		if self.connected.isSet():
 			#method = self.api.getMethod(cmd.data.method)
@@ -73,7 +73,7 @@ class Api(threading.Thread):
 				self.reply_q.put(Task(Task.CLT_UPDATE, (cmd.data.name, cmd.data.data)))
 				self.log.debug('Updated: %s - %s' % (cmd.data.name, str(data)))
 
-	
+
 	def __connect(self, cmd):
 		self.log.debug('MinecraftApi.MinecraftJsonApi(host = %s, port = %s, username = %s, password = %s, salt = %s)'%cmd.data)
 		try:
@@ -85,12 +85,12 @@ class Api(threading.Thread):
 			tsk = Task(Task.API_CONNECT)
 			self.reply_q.put(Task(Task.SCH_ADD, (tsk, 15)))
 			self.log.debug('Api Connection Failed: Rescheduled')
-			
+
 	def __disconnect(self, cmd):
 		self.connected.clear()
 		self.log.debug('Api Disconnected from server')
 		self.reply_q.put(Task(Task.SCH_REMOVE, Task.API_UPDATE))
-		
+
 	def __setup(self, cmd):
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getServerVersion', 600, 'bukkitv')))
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getPlayerLimit', 600, 'plimit')))
@@ -103,13 +103,13 @@ class Api(threading.Thread):
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getServerPort', 600, 'port')))
 		self.cmd_q.put(ApiCmd(ApiCmd.REGISTER, ApiObj('getPlugins', 10, 'plugins')))
 		self.cmd_q.put(ApiCmd(ApiCmd.STREAM, 'connections'))
-		
+
 	def __reconnect(self, cmd):
 		self.log.debug('Got Reconnect Command')
 		for item in self.apiobjs:
 			self.cmd_q.put(ApiCmd(ApiCmd.UPDATE,item))
 			self.log.debug('Add Update for %s'%item.method)
-	
+
 	def __stream(self, cmd):
 		self.log.debug('Creating Stream API Connection for %s'%cmd.data)
 		obj = StreamObj(cmd.data, self.alive, self.reply_q, self.api)
@@ -120,12 +120,12 @@ class Api(threading.Thread):
 		else:
 			self.log.debug('Stream connect FAILED, rescheduling')
 			self.cmd_q.put(cmd)
-		
+
 	def join(self):
 		self.alive.clear()
 		threading.Thread.join(self)
-		
-		
+
+
 class ApiObj(object):
 	def __init__(self, method, delay, name= None):
 		self.method = method
@@ -134,9 +134,9 @@ class ApiObj(object):
 			self.repeat = True
 		else:
 			self.repeat = False
-		self.data = None	
+		self.data = None
 		self.name = name
-		
+
 class StreamObj(threading.Thread):
 	def __init__(self, type, alive, reply_q, api):
 		self.type = type
@@ -146,7 +146,7 @@ class StreamObj(threading.Thread):
 		self.log = logging.getLogger('STREAM API')
 		self.api = api
 		threading.Thread.__init__(self)
-		
+
 	def run(self):
 		while self.alive.isSet():
 			x = select.select((self.stream,),(),(), 0.1)
@@ -167,9 +167,9 @@ class StreamObj(threading.Thread):
 
 
 
-	
+
 class ApiCmd(object):
-	
+
 	'''
 		REGISTER	ApiObj
 		REMOVE		ApiObj
@@ -181,9 +181,9 @@ class ApiCmd(object):
 		RECONNECT	None
 		STREAM		type
 	'''
-	
+
 	REGISTER, REMOVE, GET, UPDATE, CONNECT, SETUP, DISCONNECT, RECONNECT, STREAM = range(9)
-	
+
 	stype = {
 		0:'REGISTER',
 		1:'REMOVE',
@@ -195,7 +195,7 @@ class ApiCmd(object):
 		7:'RECONNECT',
 		8:'STREAM',
 		}
-	
+
 	def __init__(self, type, data = None):
 		self.type = type
 		self.data = data
