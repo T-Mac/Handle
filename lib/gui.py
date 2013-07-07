@@ -28,33 +28,33 @@ class Gui:
 		curses.init_pair(12, curses.COLOR_BLACK, curses.COLOR_RED)
 
 		#self.initscreen()
-		
+
 	def initscreen(self):
 		self.Paint.start()
 		self.Paint.queue.put({'type':'initial'})
 
-		
+
 	def addline(self, line):
 		self.queue.put({'type':'log', 'line':line})
-		
+
 	def exit(self):
 		self.Paint.join()
 		curses.endwin()
-	
+
 	def resize(self, screensaver):
 		#self.Paint.exit = True
 		self.Paint.exit = True
 		self.Paint = Paint(self.stdscr, self.queue, self, screensaver)
 		self.Paint.start()
 		self.Paint.queue.put({'type':'initial'})
-		
+
 	def outputcommand(self, command):
 		if self.client == None:
 			self.addline(command)
 		else:
 			self.addline('[HANDLE] ' + command)
 			self.client.addtask(Task(Task.CLT_INPUT, command))
-	
+
 	def update(self, items):
 		self.log.debug('Update Called')
 		for item in items:
@@ -78,20 +78,20 @@ class Gui:
 							self.Paint.Status.nfo.remove(player)
 				elif item[1]['action'] == 'connected':
 					self.Paint.Status.nfo.append(item[1])
-						
-	
+
+
 			else:
 				self.Paint.Status.sys[item[0]] = item[1]
 		self.Paint.queue.put({'type':'status'})
 		self.Paint.queue.put({'type':'initial'})
 		self.Paint.queue.put({'type':'screen','data':None})
 
-		
+
 class Paint(threading.Thread):
 	def __init__(self, stdscr, queue, gui, screensaver = None):
 		self.parentgui = gui
 		self.stdscr = stdscr
-		size = self.stdscr.getmaxyx()	
+		size = self.stdscr.getmaxyx()
 		self.width = size[1]
 		self.height = size[0]
 		self.winlog = self.stdscr.subwin(self.height-2,self.width-30,0,0)
@@ -112,7 +112,7 @@ class Paint(threading.Thread):
 		self.exit = False
 
 		threading.Thread.__init__(self)
-		
+
 	def initialpaint(self):
 		self.winlog.erase()
 		self.winlog.border()
@@ -126,7 +126,7 @@ class Paint(threading.Thread):
 		self.Status.draw()
 
 	def run(self):
-		
+
 		self.Status.draw()
 		while not self.exit:
 
@@ -143,7 +143,7 @@ class Paint(threading.Thread):
 				if len(self.Input.command) > 0:
 					self.parentgui.outputcommand(self.Input.send())
 					self.queue.put({'type':'input'})
-					
+
 			elif code == curses.KEY_LEFT:
 				if self.Status.page == 'nfo':
 					self.Status.page = 'bkt'
@@ -154,7 +154,7 @@ class Paint(threading.Thread):
 					self.Status.page = 'sys'
 					self.clockrefresh = False
 				self.queue.put({'type':'status'})
-				
+
 			elif code == curses.KEY_RIGHT:
 				if self.Status.page == 'sys':
 					self.clockrefresh = True
@@ -165,17 +165,17 @@ class Paint(threading.Thread):
 				elif self.Status.page == 'bkt':
 					self.Status.page = 'nfo'
 				self.queue.put({'type':'status'})
-				
+
 			elif code == curses.KEY_UP:
 				self.Input.scrollup()
 			elif code == curses.KEY_DOWN:
 				self.Input.scrolldown()
-				
+
 			elif not code == -1:
 				#self.queue.put({'type':'log', 'line':str(code)})
 				x = self.Input.parsechar(code)
 				self.queue.put({'type':'input'})
-		
+
 	def parse(self, item):
 		if item['type'] == 'log':
 			self.Log.addline(item['line'])
@@ -195,15 +195,15 @@ class Paint(threading.Thread):
 			else:
 				self.Log.screen = item['data']
 				self.Log.paint()
-			
+
 	def join(self):
 		self.exit = True
 		self.clock.join()
 		threading.Thread.join(self)
-	
-		
-	
-		
+
+
+
+
 class Log:
 	def __init__(self, window):
 		self.screen = []
@@ -224,7 +224,7 @@ class Log:
 		#		self.screen.append(sub1)
 		#		self.screen.pop(0)
 		#		self.addline(sub2)
-			
+
 		#else:
 			line = self.remove_escapes(line)
 			self.log.debug('Line after replacement: %s'%line)
@@ -235,13 +235,13 @@ class Log:
 		escapes = ['[0;33;22m','[0;37;1m','[0m','[32m','[31m','[35m','[m','[33;1m','[37;22m','[31;1m','[32;1m','[0;33;1m','[0;37;22m']
 		replacements = ['[YEL]','[WHI]','[OFF]','[GRE]','[RED]','[MAG]','','[YEL]','[WHI]','[RED]','[GRE]','[YEL]','[WHI]']
 		w = string.printable[:-5]
-		line = "".join(c for c in line if c in w)	
+		line = "".join(c for c in line if c in w)
 		x = 0
 		while x < len(escapes):
 			line = line.replace(escapes[x],replacements[x])
 			x = x+1
 		return line
-		
+
 	def paint(self):
 		self.window.erase()
 		self.window.border()
@@ -251,19 +251,19 @@ class Log:
 		while x >= 0:
 			wrappedline = self.wrapline(display[x])
 			for line in wrappedline:
-		
+
 
 				#self.window.addstr(y,1,line)
-				
+
 				self.color_print(self.colorize(line),y)
 			#self.window.addstr(y,1,display[x])
 			x = x-1
 			y = y-1
 		self.window.refresh()
-		
+
 	def setsize(self):
 		self.height, self.width = self.window.getmaxyx()
-		
+
 	def wrapline(self, line):
 		wrapped = []
 		wrapped.append(line[:self.width-2])
@@ -279,11 +279,11 @@ class Log:
 		#else:
 		#	wrapped.append(line)
 		return wrapped
-		
+
 	def color_print(self, line, y):
 		cur_attr = 0
 		colors = {'[YEL]':3,'[WHI]':7,'[OFF]':9,'[GRE]':2,'[RED]':1,'[MAG]':5, '[CYN]':6}
-		pos = 0 
+		pos = 0
 		startpos = 0
 		hpos = 1
 		remaining = line
@@ -300,16 +300,16 @@ class Log:
 
 			pos = pos+1
 		self.window.addstr(y,hpos,remaining,curses.color_pair(cur_attr))
-	#print 'Attr:%s %s' % (cur_attr,remaining) 
+	#print 'Attr:%s %s' % (cur_attr,remaining)
 	def colorize(self, line):
-		
+
 		elements = {'[WARNING]':'[RED]','For help, type "help" or "?"':'[YEL]','enabled':'[GRE]','[HANDLE]':'[CYN]','Connected to Handle ver.':'[GRE]','Loading':'[YEL]','Unknown Command,':'[RED]'}
 		for item in elements:
 			pos = line.find(item)
 			if pos != -1:
 				line = line[:pos] + elements[item] + line[pos:pos+len(item)] + '[WHI]' + line[pos+len(item):]
 		return line
-		
+
 class Input:
 	def __init__(self, window):
 		self.window = window
@@ -326,16 +326,16 @@ class Input:
 		elif code == 127:
 			self.command = self.command[:-1]
 			return code
-			
+
 		elif code == 263:
 			self.command = self.command[:-1]
-		
-	def paint(self):	
+
+	def paint(self):
 		self.window.erase()
 		self.window.border(0,0,' ',0,4194424,4194424,0,0)
 		self.window.addstr(0,1,'> ' + self.command)
 		self.window.refresh()
-	
+
 	def send(self):
 		x = self.command
 		if len(self.scrollback) > 10:
@@ -345,8 +345,8 @@ class Input:
 		self.sbpos = 11
 		self.command = ''
 		return x
-	
-	
+
+
 	def scrollup(self):
 		if self.sbpos > 0 :
 			#if self.sbpos == 11:
@@ -356,14 +356,14 @@ class Input:
 			self.log.debug(self.scrollback[self.sbpos-1])
 			self.log.debug('Scrolled up to pos: %s' % str(self.sbpos-1))
 			self.paint()
-		
+
 	def scrolldown(self):
 		if self.sbpos < 11:
 			self.sbpos = self.sbpos + 1
 			self.command = self.scrollback[self.sbpos-1]
 			self.log.debug(self.scrollback[self.sbpos-1])
 			self.paint()
-			
+
 class Status:
 	def __init__(self, window):
 		self.log = logging.getLogger('STATUS')
@@ -397,8 +397,8 @@ class Status:
 			self.draw_bkt()
 		elif self.page == 'nfo':
 			self.draw_nfo()
-		
-	def topdraw(self):	
+
+	def topdraw(self):
 		self.window.hline(2,0,curses.ACS_HLINE,29)
 		self.window.addstr(1,4,'SYS',curses.color_pair(6))
 		self.window.addch(1,8,curses.ACS_VLINE,)
@@ -417,7 +417,7 @@ class Status:
 		elif self.page == 'nfo':
 			self.window.addstr(1,22,'NFO',curses.A_REVERSE)
 		self.window.refresh()
-		
+
 	def draw_sys(self):
 		self.window.addstr(4,3,'Handle Ver:',curses.color_pair(6))
 		self.window.addstr(4,15,str(self.sys['handlev']),curses.color_pair(2))
@@ -427,7 +427,7 @@ class Status:
 		self.window.addstr(6,15,str(self.sys['port']),curses.color_pair(2))
 		#self.window.addstr(7,3,'Uptime:')
 		#self.window.addstr(7,15,str(self.sys['uptime']))
-		
+
 		x = 11
 		for letter in 'RAM':
 			self.window.addstr(x,4,letter,curses.color_pair(6))
@@ -444,7 +444,7 @@ class Status:
 			x = x+1
 		self.draw_graph(11,22,float(self.sys['plimit']),float(len(self.nfo)))
 		self.window.refresh()
-	
+
 	def draw_hdl(self):
 		self.window.addstr(4,7,'Scheduled Tasks', curses.A_UNDERLINE)
 		x = 6
@@ -469,7 +469,7 @@ class Status:
 			self.window.addnstr(x,18,plugin['version'],11,curses.color_pair(6))
 			x = x+1
 		self.window.refresh()
-	
+
 	def draw_nfo(self):
 		self.window.addstr(4,11,'Players', curses.A_UNDERLINE)
 		x = 6
@@ -497,7 +497,7 @@ class Status:
 			self.window.addch(x,left+3,curses.ACS_VLINE)
 			line_color = 10
 			cur_char = ' '
-			
+
 			if total - drawn > yellow:
 				line_color = 11
 			if total - drawn > red:
@@ -526,21 +526,21 @@ class Status:
 		else:
 			self.window.addstr(rbottom+1,left+1,str(int(percent*100)),curses.color_pair(num_color))
 		self.window.refresh()
-		
-		
+
+
 class ClockUpdate(threading.Thread):
 	def __init__(self,parent):
 		self.parent = parent
 		self.exit = False
 		threading.Thread.__init__(self)
-		
-		
+
+
 	def run(self):
 		while not self.exit:
 			time.sleep(1)
 			if self.parent.clockrefresh:
 				self.parent.queue.put({'type':'status'})
-			
+
 	def join(self):
 		self.exit = True
 		threading.Thread.join(self)

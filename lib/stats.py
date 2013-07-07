@@ -9,13 +9,13 @@ def checkin(id):
 	except:
 		pass
 	return False
-	
+
 def has_internet():
 	try:
 		response=urllib2.urlopen('http://74.125.134.100',timeout=5)
 		return True
 	except urllib2.URLError as err: pass
 	return False
-	
+
 def gen_id():
 	return uuid.uuid4().hex

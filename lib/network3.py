@@ -29,12 +29,12 @@ class Network(threading.Thread):
 					NetworkCommand.CLOSED: self.__handle_closed,
 					NetworkCommand.EXIT: self.__handle_exit,
 					NetworkCommand.TASK: self.__handle_task
-					
+
 				}
 		self.log = logging.getLogger('NETWORK')
 		self.ready_to_exit = threading.Event()
 		threading.Thread.__init__( self )
-		
+
 	def run(self):
 		self.IO.start()
 		while self.alive.isSet():
@@ -50,30 +50,30 @@ class Network(threading.Thread):
 				continue
 	def __handle_connect(self, cmd):
 		self.IO_cmd_q.put(cmd)
-		
-	def __handle_serve(self, cmd):	
+
+	def __handle_serve(self, cmd):
 		self.IO_cmd_q.put(cmd)
-	
+
 	def __handle_stop(self, cmd):
 		self.log.debug('STOPPING.......')
 		self.IO.join()
 		self.log.debug('DONE!!')
 		self.ready_to_exit.set()
-		
+
 	def __handle_send(self, cmd):
 		if self.IO.connected.isSet():
 			self.IO_cmd_q.put(cmd)
-					
+
 	def __handle_receive(self, cmd):
 		self.Parse.parse(cmd.data)
-	
+
 	def __handle_disconn(self, cmd):
 		self.log.debug('GOT DISCONNECT COMMAND')
 		self.IO_cmd_q.put(cmd)
-		
+
 	def __handle_closed(self, cmd):
 		self.IO_cmd_q.put(cmd)
-		
+
 	def __handle_exit(self, cmd):
 		if self.IO.listening.isSet():
 			client = DummyClient(cmd.data[0],int(cmd.data[1]))
@@ -85,18 +85,18 @@ class Network(threading.Thread):
 		self.log.debug('IO join completed')
 		self.ready_to_exit.set()
 		self.log.debug('Ready Flag set')
-	
+
 	def __handle_task(self,cmd):
 		self.reply_q.put(cmd.data)
-		
+
 	def join(self):
 		self.ready_to_exit.wait()
 		self.alive.clear()
 		threading.Thread.join(self)
-	
-	
-		
-	
+
+
+
+
 class IO(threading.Thread):
 	def __init__(self, cmd_q, reply_q):
 		self.cmd_q = cmd_q
@@ -118,7 +118,7 @@ class IO(threading.Thread):
 		self.fault_count = 0
 		self.sock = None
 		threading.Thread.__init__( self )
-		
+
 	def run(self):
 		self.log.debug('loop started')
 		while self.alive.isSet():
@@ -129,7 +129,7 @@ class IO(threading.Thread):
 			except Queue.Empty as e:
 				#self.log.debug('Q Returned Empty')
 				pass
-				
+
 			if self.connected.isSet():
 				#self.log.debug('checking packets')
 				if self.conn:
@@ -149,7 +149,7 @@ class IO(threading.Thread):
 							#self.conn.shutdown(socket.SHUT_RDWR)
 							#self.conn.close()
 							self.cmd_q.put(NetworkCommand(NetworkCommand.DISCONN,True))
-							
+
 	def __handle_connect(self, cmd):
 		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.log.debug('Connecting.....')
@@ -163,8 +163,8 @@ class IO(threading.Thread):
 			self.reply_q.put(NetworkCommand(NetworkCommand.TASK,Task(Task.CLT_EXIT)))
 			self.ready_to_exit.set()
 
-		
-		
+
+
 	def __handle_serve(self, cmd):
 		self.log.debug('SERVING......')
 		self.host, self.port = cmd.data
@@ -189,7 +189,7 @@ class IO(threading.Thread):
 		self.fault_count = 0
 		self.reply_q.put(NetworkCommand(NetworkCommand.TASK,Task(Task.ON_CONNECT)))
 
-		
+
 	def __handle_send(self, cmd):
 		self.log.debug('Sending.....')
 		if self.connected.isSet():
@@ -200,7 +200,7 @@ class IO(threading.Thread):
 			else:
 				self.sock.send(packetencode + '\n')
 		self.log.debug('Sent!')
-		
+
 	def __reply_receive(self, data):
 		try:
 			packetdecode = data[:-1].decode('hex_codec')
@@ -219,13 +219,13 @@ class IO(threading.Thread):
 					self.conn.shutdown(socket.SHUT_RDWR)
 					self.conn.close()
 					self.cmd_q.put(NetworkCommand(NetworkCommand.DISCONN,True))
-				
+
 		else:
 			self.fault_count = 0
 			packet = Packet(raw['type'], raw['data'])
 			self.reply_q.put(NetworkCommand(NetworkCommand.RECEIVE, packet))
-			
-		
+
+
 	def join(self, timeout = None):
 		self.log.debug('THIS IS JOIN METHOD BEING CALLED')
 		#self.log.debug('caller name:' +  str(inspect.stack()[1][3]))
@@ -235,7 +235,7 @@ class IO(threading.Thread):
 		threading.Thread.join(self, timeout)
 		self.log.debug('DONE')
 		return None
-	
+
 	def __handle_disconn(self, cmd):
 		if self.conn:
 			self.log.debug('Disconnected')
@@ -250,7 +250,7 @@ class IO(threading.Thread):
 			if not self.fault_count > 25:
 				self.conn.shutdown(socket.SHUT_RDWR)
 				self.conn.close()
-			
+
 			if cmd.data:
 				self.cmd_q.put(NetworkCommand(NetworkCommand.SERVE,(self.host, int(self.port))))
 			else:
@@ -260,15 +260,15 @@ class IO(threading.Thread):
 			self.cmd_q.put(NetworkCommand(NetworkCommand.SEND,Packet(Packet.DISCONN,True)))
 			#self.connected.clear()
 
-			
-	def __handle_closed(self, cmd):	
+
+	def __handle_closed(self, cmd):
 		self.log.debug('Closed recieved')
 		self.connected.clear()
 		self.sock.close()
 		self.ready_to_exit.set()
 		self.log.debug('Disconnected')
 		self.reply_q.put(NetworkCommand(NetworkCommand.TASK,Task(Task.CLT_EXIT)))
-	
+
 class Parse(object):
 	def __init__(self, cmd_q, reply_q):
 		self.reply_q = reply_q
@@ -281,31 +281,31 @@ class Parse(object):
 				Packet.DISCONN: self.__handle_disconn,
 				Packet.CLOSED: self.__handle_closed
 			}
-			
+
 	def parse(self, cmd):
 		self.handlers[cmd.type](cmd)
-		
+
 	def __handle_lineup(self, cmd):
 		self.reply_q.put(Task(Task.CLT_LINEUP, cmd.data))
-	
+
 	def __handle_update(self, cmd):
 		self.reply_q.put(Task(Task.NET_SCREEN, cmd.data))
-		
+
 	def __handle_input(self, cmd):
 		self.reply_q.put(Task(Task.HDL_COMMAND, cmd.data))
-	
+
 	def __handle_test(self, cmd):
 		print cmd.data
-	
+
 	def __handle_disconn(self, cmd):
 		logging.debug('DISCONNECT AT PARSER')
 		self.cmd_q.put(NetworkCommand(NetworkCommand.DISCONN,cmd.data))
-		
+
 	def __handle_closed(self, cmd):
 		self.cmd_q.put(NetworkCommand(NetworkCommand.CLOSED))
-		
 
-		
+
+
 class DummyClient(object):
 	def __init__(self, host, port):
 		self.host = host
@@ -315,14 +315,14 @@ class DummyClient(object):
 		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.log.debug('Connecting.....')
 		self.sock.connect((self.host, self.port))
-		self.log.debug('Connected')		
-			
-			
-			
-class NetworkCommand(object):	
+		self.log.debug('Connected')
+
+
+
+class NetworkCommand(object):
 	"""A command to the network controller.
 	   Each command type has its associated data:
-	   
+
 	   CONNECT			(host, port) tuple
 	   SERVE			(port)
 	   STOP				None
@@ -345,11 +345,11 @@ class NetworkCommand(object):
 		7:'EXIT',
 		8:'TASK'
 	}
-		
+
 	def __init__(self, type, data = None):
 		self.type = type
 		self.data = data
-		
+
 class Packet(object):
 	"""
 		LINEUP		(line)
@@ -371,10 +371,6 @@ class Packet(object):
 	def __init__(self, type, data = None):
 		self.type = type
 		self.data = data
-	
+
 	def dconstruct(self):
 		return {'type':self.type, 'data':self.data}
-
-
-	
-		

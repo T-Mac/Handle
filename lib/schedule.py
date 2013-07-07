@@ -1,7 +1,7 @@
 import threading
 import Queue
 import uuid
-import logging 
+import logging
 from task import Task
 import time
 class Schedule(threading.Thread):
@@ -20,7 +20,7 @@ class Schedule(threading.Thread):
 			}
 		self.log = logging.getLogger('SCHEDULE')
 		threading.Thread.__init__(self)
-	
+
 	def run(self):
 		self.log.debug('Schedule Loop Started')
 		while self.alive.isSet():
@@ -30,15 +30,15 @@ class Schedule(threading.Thread):
 				self.log.debug('Got Task: %s' % cmd.stype[cmd.type])
 				#self.log.debug('Got Task: %s: %s' % cmd.stype[cmd.type], str(cmd.data))
 				self.handlers[cmd.type](cmd)
-				
+
 			except Queue.Empty:
 				#self.log.debug('Empty Q')
 				pass
-		
+
 		self.log.debug('Dropped from loop')
 
 
-				
+
 	def __add(self, task):
 		if len(task.data) == 4:
 			event = Event(task.data[0], task.data[1], task.data[2])
@@ -50,15 +50,15 @@ class Schedule(threading.Thread):
 			event = Event(task.data[0], task.data[1])
 		timer = threading.Timer(task.data[1], self.__call, [event])
 		event.timer = timer
-		self.events.append(event) 		
+		self.events.append(event)
 		self.log.debug('Event Added: %s - delay: %s repeat: %s' % (event.task.stype[event.task.type], str(event.delay), str(event.repeat)))
 		timer.start()
 		if event.visible:
-			
+
 			event_flat = (event.name, event.delay+time.time())
 			self.visible_events.append(event_flat)
 			self.reply_q.put(Task(Task.CLT_UPDATE,[('events',self.visible_events)]))
-		
+
 	def __remove(self, task):
 		for event in self.events:
 			if event.task.type == task.data:
@@ -71,19 +71,19 @@ class Schedule(threading.Thread):
 		#self.events.remove(task.data)
 		#task.data.timer.cancel()
 			self.log.debug('Event Removed: %s, %s : %s' % (event.id, str(event.delay), event.task.stype[event.task.type]))
-		
+
 	def join(self):
 		for event in self.events:
 			event.timer.cancel()
 		self.alive.clear()
 		self.log.debug('JOIN THREAD BEING CALLED')
 		threading.Thread.join(self)
-		
+
 	def __call(self, event):
 		self.log.debug('Timer Returned - Adding Task %s' % event.task.stype[event.task.type])
 		self.reply_q.put(event.task)
 		if event.repeat:
-		
+
 			scmd = SchedCommand(SchedCommand.ADD, (event.task, event.delay, True))
 			self.cmd_q.put(scmd)
 			self.log.debug('Repeat Flag: True - Recreating Timer')
@@ -96,10 +96,10 @@ class Schedule(threading.Thread):
 			self.log.debug('Repeat Flag: False - Deleting Event')
 		if event.visible:
 			self.reply_q.put(Task(Task.CLT_UPDATE,('events', self.visible_events)))
-			
+
 	def __update(self, task):
 		self.reply_q.put(Task(Task.CLT_UPDATE,('events', self.visible_events)))
-		
+
 class Event(object):
 	def __init__(self, task, delay, repeat=False):
 		self.task = task
@@ -110,23 +110,23 @@ class Event(object):
 		self.visible = False
 		self.name = None
 
-		
-		
+
+
 class SchedCommand(object):
-	
+
 	'''
 	ADD			(task, delay, [repeat])
 	REMOVE		id to stop
 	UPDATE		None
 	'''
 	ADD, REMOVE, UPDATE = range(3)
-	
+
 	stype = {
 		0:'ADD',
 		1:'REMOVE',
 		2:'UPDATE',
 		}
-	
+
 
 	def __init__(self, type, data = None):
 		self.type = type
