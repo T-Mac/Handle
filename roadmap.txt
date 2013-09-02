@@ -1,0 +1,35 @@
++ Automatic server creation
+	check latest version
+		bukkit
+		jsonapi
+		other plugins ?
+	
+	download latest version
+		bukkit
+		jsonapi
+		other plugins ?
+	
+	create "deploy" packages
+	create instance of server from deploy package or newest
+	create deploy from zip
+	create deploy from path
+
+longterm
+user defined plugins
+
+tech details
+create new server object
+	include
+	-version
+	-path
+	-unique name
+	-start/stop method
+	
+	
+	
+todo
+server creator
+
+	
+	
+	
