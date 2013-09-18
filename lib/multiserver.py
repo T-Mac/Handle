@@ -16,4 +16,4 @@ class Package(object):
 		
 	def setup(self):
 		os.mkdir('servers/%s'%self.name)
-		shutil.copy(self.craftbukkit.path, 'servers/%s'%self.name)
+		shutil.copy(self.craftbukkit.path, 'servers/%s/craftbukkit.jar'%self.name)
