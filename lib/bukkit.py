@@ -106,8 +106,8 @@ class Dev_Bukkit(object):
 			for chunk in r.iter_content(chunk_size=2048): 
 				if chunk: # filter out keep-alive new chunks
 					dled = dled + len(chunk)
-					if self.prog_call:
-						self.prog_call(float(file['size']),float(dled))
+					#if self.prog_call:
+					#	self.prog_call(float(file['size']),float(dled))
 					file.write(chunk)
 					file.flush()
 		file = Plugin(filename, deets[2], deets[1])
