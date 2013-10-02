@@ -1,0 +1,20 @@
+msg definitions
+Meta Type	Command		Incl Data
+HANDLE		COMMAND
+			EXIT
+			
+NETWORK		
+
+BUKKIT		START		server_id
+			STOP		server_id
+			RESTART		server_id
+			CREATE		(server_id, package)
+			REMOVE		server_id
+			UPDATE		(server_id, package)
+
+PACKAGE		CREATE		(package_id, version)
+			REMOVE		package_id
+			UPDATE		(package_id, version)
+
+CLIENT
+SCHEDULE
