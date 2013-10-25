@@ -1,5 +1,9 @@
 import logging
 
+LOGLVL = logging.DEBUG
+
+logging.basicConfig(level=LOGLVL, format='%(asctime)s %(name)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logger = logging.getLogger(__name__)
 
 class Pipeline(object):
 	filters = []
@@ -8,6 +12,7 @@ class Pipeline(object):
 		
 	def Execute(self, msg):
 		for filter in self.filters:
+			logger.debug('Executing: %s'%str(filter))
 			msg = filter.Execute(msg)
 		return msg
 		
@@ -21,12 +26,12 @@ class Aspect(object):
 		self.action = action
 		
 class DebugLoggingAspect(object):
-	def __init__(self, action, logger):
+	def __init__(self, action):
 		self.action=action
-		self.logger = logger
+		
 		
 	def Execute(self, msg):
-		self.logger.debug('test')
+		logger.debug('GOT: %s'%str(msg))
 		self.action(msg)
 
 class SPDebugger(Aspect):
