@@ -3,3 +3,6 @@
 *test*
 *.old
 handle.pid
+jars/
+lib/jars
+lib/tmp
