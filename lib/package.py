@@ -16,10 +16,11 @@ class Package(object):
 		self.plugins = plugins
 
 class Craftbukkit(object):
-	def __init__(self, version, path, md5):
+	def __init__(self, version, path, md5, url):
 		self.version = version
 		self.path = path
 		self.md5 = md5
+		self.url = url
 		
 class Plugin(object):
 	def __init__(self, path, plugin, md5):
@@ -28,7 +29,7 @@ class Plugin(object):
 		self.md5 = md5
 
 class Package_Constructor(object):
-	def __init__(self, progress_callback):
+	def __init__(self, progress_callback = None):
 		self.pipeline = pipeline.Pipeline()
 		self.progcall = progress_callback
 		
@@ -79,33 +80,14 @@ class PVIProcessFilter(object):
 		module_logger.debug('Converting to float representation')
 		versions = []
 		for version in matches:
-			versions.append(self.convert_to_float(version))
+			versions.append(FolderApi.convert_ver_to_float(version))
 		version = max(versions)
-		version = self.expand_float(version)
+		version = FolderApi.expand_float_to_ver(version)
 		module_logger.debug('Found Version: %s'%version)
-		msg.cb_version = version
+		msg.pkg_version = msg.cb_version
+		msg.cb_version = version		
 		delattr(msg,'PVI')
 		return msg
-	
-	def convert_to_float(self, ver):
-		x = ver.replace('.','').replace('-','')
-		version = float(x[:3])
-		x = x[3:]
-		if not x.find('R') == -1:
-			x = x.replace('R','')
-			version = version + (float(x)*0.01)
-		return version
-	
-	def expand_float(self, ver):
-		x = str(int(ver))
-		version = ''
-		for number in x:
-			version = version + number + '.'
-		version = version[:-1]
-		if len(str(ver)) > 5:
-			version = version + '-R' + str(ver)[-2:-1] + '.' + str(ver)[-1:]
-		return version
-
 			
 class CBVersionFilter(object):
 	def Execute(self, msg):
@@ -117,44 +99,51 @@ class CBVersionFilter(object):
 				break
 		match = FolderApi.check_for_existing(version[0].replace('.',''), version[1]['checksum_md5'])
 		if match:
-			msg.craftbukkit = Craftbukkit(version[0], match, version[1]['checksum_md5'])
+			msg.craftbukkit = Craftbukkit(version[0], match, version[1]['checksum_md5'], version[1]['url'])
 			msg.download = False
 		else:
-			msg.craftbukkit = Craftbukkit(version[0], version[1]['url'], version[1]['checksum_md5'])
+			msg.craftbukkit = Craftbukkit(version[0], None, version[1]['checksum_md5'], version[1]['url'])
 			msg.download = True
 		return msg
 
 class CBDownloadFilter(object):
-	def __init__(self, callback):
+	def __init__(self, callback = None):
 		self.callback = callback
 		
 	def Execute(self, msg):
 		if msg.download:
-			url = 'http://dl.bukkit.org' + msg.craftbukkit.path
+			url = 'http://dl.bukkit.org' + msg.craftbukkit.url
 			filename = 'jars/craftbukkit-%s.jar'%msg.craftbukkit.version.replace('.','')
 			module_logger.debug('Downloading %s to %s'%(url, filename))
 			FolderApi.dl_file(url, filename, self.callback)
 			if FolderApi.check_md5(filename, msg.craftbukkit.md5):
 				msg.craftbukkit.path = filename
-				delattr(msg, 'download')
-			return msg
-		else:
-			return msg
+		delattr(msg, 'download')
+		return msg
 			
 class PluginDlFilter(object):
-	def __init__(self, callback):
+	def __init__(self, callback = None):
 		self.callback = callback
 		
 	def Execute(self, msg):
 		module_logger.debug('Downloading Plugins')
 		for plugin in msg.plugins:
-			module_logger.debug('Downloading: %s'%plugin)
+			file = plugin+str(FolderApi.convert_ver_to_float(msg.craftbukkit.version, whole=True))
 			deets = Dev_Bukkit.find_compat(plugin, msg.cb_version)
-			filename = 'jars/%s.jar'%(plugin+msg.cb_version.replace('.',''))
-			FolderApi.dl_file(deets[0], filename, self.callback)
-			if FolderApi.check_md5(filename, deets[1]):
-				msg.plugins[plugin] = Plugin(filename, plugin, deets[1])
-				module_logger.debug('Finished downloading %s'%plugin)
+			module_logger.debug('Checking for Existing: %s'%plugin)
+			existing = FolderApi.check_for_existing(file, deets[1])
+			module_logger.debug('Check Returned: %s' %str(existing))
+			if not existing == False:
+				module_logger.debug('Match Found: %s'%existing)
+				msg.plugins[plugin] = Plugin(existing, plugin, deets[1])
+			else:
+				module_logger.debug('Downloading: %s'%plugin)
+				filename = 'jars/%s.jar'%(file)
+				FolderApi.dl_file(deets[0], filename, self.callback)
+				if FolderApi.check_md5(filename, deets[1]):
+					msg.plugins[plugin] = Plugin(filename, plugin, deets[1])
+					module_logger.debug('Finished downloading %s'%plugin)
+		return msg
 			
 class Dev_Bukkit(object):
 	@staticmethod
@@ -215,9 +204,9 @@ class FolderApi(object):
 		matches = dir.glob('*'+pattern+'*')
 		for file in matches:
 			if FolderApi.check_md5(str(file), md5):
+				module_logger.debug('Match Fodund: %s'%str(file))
 				return str(file)
-			else:
-				return False
+		return False
 	@staticmethod			
 	def check_md5(path, md5):
 		hasher = hashlib.md5()
@@ -251,3 +240,27 @@ class FolderApi(object):
 		stop = time.time()
 		module_logger.info('Download Finished in %s secs'%str(int(stop-start)))
 		return filename
+	
+	@staticmethod
+	def convert_ver_to_float(ver, whole = False):
+		x = ver.replace('.','').replace('-','')
+		version = float(x[:3])
+		x = x[3:]
+		if not x.find('R') == -1:
+			x = x.replace('R','')
+			version = version + (float(x)*0.01)
+		if whole:
+			version = int(version * 100)
+		module_logger.debug('Converted %s to %s'%(ver, str(version)))
+		return version
+	
+	@staticmethod
+	def expand_float_to_ver(ver):
+		x = str(int(ver))
+		version = ''
+		for number in x:
+			version = version + number + '.'
+		version = version[:-1]
+		if len(str(ver)) > 5:
+			version = version + '-R' + str(ver)[-2:-1] + '.' + str(ver)[-1:]
+		return version
