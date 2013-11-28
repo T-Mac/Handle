@@ -25,7 +25,7 @@ class PVIProcessFilter(object):
 		for plugin, index in msg.PVI.iteritems():
 			vers = []
 			for item in index:
-				vers.extend (item[1])
+				vers.extend(item[1])
 			lists.append(vers)
 		module_logger.debug('Comparing lists')
 		x = lists.pop()
@@ -36,19 +36,24 @@ class PVIProcessFilter(object):
 		module_logger.debug('Converting to float representation')
 		versions = []
 		for version in matches:
-			versions.append(FolderApi.convert_ver_to_float(version))
-		version = max(versions)
-		version = FolderApi.expand_float_to_ver(version)
-		module_logger.debug('Found Version: %s'%version)
+			versions.append(FolderApi.convert_ver_to_float(version, rough=True))
+		#version = max(versions)
+		#version = FolderApi.expand_float_to_ver(version)
+		#module_logger.debug('Found Version: %s'%version)
 		msg.pkg_version = msg.cb_version
-		msg.cb_version = version		
-		delattr(msg,'PVI')
+		#msg.cb_version = version	
+		#print versions
+		msg.PVI = versions
 		return msg
 			
 class CBVersionFilter(object):
 	def Execute(self, msg):
 		version_list = Dl_Bukkit.get_cb_versions(msg.channel)
-		print version_list
+		simple_ver = []
+		for item in version_list:
+			simple_ver.append(FolderApi.convert_ver_to_float(item[0],rough = True))
+		matches = list(set(simple_ver).intersection(set(msg.PVI)))
+		msg.cb_version = FolderApi.expand_float_to_ver(max(matches))
 		for item in version_list:
 			if not item[0].find(msg.cb_version) == -1:
 				version = item
@@ -58,11 +63,14 @@ class CBVersionFilter(object):
 				module_logger.debug('Version mismatch: %s - %s'%(item[0], msg.cb_version))
 		match = FolderApi.check_for_existing('jars/', version[0].replace('.',''), version[1]['checksum_md5'])
 		if match:
-			msg.craftbukkit = package.Craftbukkit(version[0], match, version[1]['checksum_md5'], version[1]['url'])
+			msg.craftbukkit = package.Craftbukkit(str(version[0]), match, str(version[1]['checksum_md5']), str(version[1]['url']))
+			module_logger.debug('File match found: %s - NOT DOWNLOADING'%match)
 			msg.download = False
 		else:
-			msg.craftbukkit = package.Craftbukkit(version[0], None, version[1]['checksum_md5'], version[1]['url'])
+			msg.craftbukkit = package.Craftbukkit(str(version[0]), None, str(version[1]['checksum_md5']), str(version[1]['url']))
+			module_logger.debug('File match FAILED - DOWNLOADING')
 			msg.download = True
+		delattr(msg,'PVI')
 		return msg
 
 class CBDownloadFilter(object):

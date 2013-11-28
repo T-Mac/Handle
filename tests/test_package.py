@@ -25,7 +25,11 @@ def mockinvoke():
 @pytest.fixture(scope='module')
 def pkgConstruct():
 	return package.Package_Constructor()
-	#MockCB = package.Craftbukkit(
+	#MockCB = package.Craftbukkit
+	
+@pytest.fixture(scope='module')
+def pkgHandler():
+	return package.Package_Handler()
 	
 class Test_Package:
 	def test_plugin_version_finder(self, mockpkg):
@@ -34,7 +38,7 @@ class Test_Package:
 		msg = PluginVersionFilter.Execute(mockpkg)
 		assert hasattr(msg, 'PVI') == True
 		msg = PVIProcessFilter.Execute(msg)
-		assert not hasattr(msg, 'PVI')
+		assert hasattr(msg, 'PVI')
 		assert hasattr(msg, 'pkg_version')
 		
 	def test_CBVersionFilter(self, mockpkg):
@@ -60,16 +64,19 @@ class Test_Package:
 		for plugin, object in msg.plugins.iteritems():
 			assert isinstance(object, package.Plugin)
 			
-	# def test_PackageConstructor(self, pkgConstruct, mockinvoke):
-		# pkg = pkgConstruct.Construct(mockinvoke[0], mockinvoke[1], mockinvoke[2])
-		# assert hasattr(pkg, 'pkg_version')
-		# assert hasattr(pkg, 'plugins')
-		# for plugin, obj in pkg.plugins.iteritems():
-			# assert isinstance(plugin, basestring)
-			# assert isinstance(obj, package.Plugin)
-		# assert isinstance(pkg.craftbukkit, package.Craftbukkit)
-		# assert hasattr(pkg, 'channel')
-		# print pkg.craftbukkit.url
+	def test_PackageConstructor(self, pkgConstruct, mockinvoke):
+		pkg = pkgConstruct.Construct(mockinvoke[0], mockinvoke[1], mockinvoke[2])
+		assert hasattr(pkg, 'pkg_version')
+		assert hasattr(pkg, 'plugins')
+		for plugin, obj in pkg.plugins.iteritems():
+			assert isinstance(plugin, basestring)
+			assert isinstance(obj, package.Plugin)
+		assert isinstance(pkg.craftbukkit, package.Craftbukkit)
+		assert hasattr(pkg, 'channel')
+		
+	def test_PackageHandler(self, pkgHandler):
+		pkg = pkgHandler.get('default')
+		assert isinstance(pkg, package.Package)
 		
 		
 		

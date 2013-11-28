@@ -58,15 +58,16 @@ class FolderApi(object):
 		return filename
 	
 	@staticmethod
-	def convert_ver_to_float(ver, whole = False):
+	def convert_ver_to_float(ver, whole = False, rough = False):
 		x = ver.replace('.','').replace('-','')
-		version = float(x[:3])
-		x = x[3:]
 		if not x.find('R') == -1:
-			x = x.replace('R','')
-			version = version + (float(x)*0.01)
+			version = float(x[:x.find('R')] )
+			if not rough:
+				version = version + (float(x[x.find('R')+1:]) * 0.01)
+		else:
+			version = float(x)
 		if whole:
-			version = int(version * 100)
+			version = int(version)
 		module_logger.debug('Converted %s to %s'%(ver, str(version)))
 		return version
 	

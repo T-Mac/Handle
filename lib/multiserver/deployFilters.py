@@ -58,7 +58,7 @@ class ConfigDeployFilter(object):
 	def Execute(self, msg):
 		module_logger.debug('Deploying Config')
 		DeployApi.DeployConfig(msg)
-		config = lib.config.load_config(section='settings', keys=['maxheap','startheap'])
+		config = lib.config.load_server_config(section='settings', keys=['maxheap','startheap'])
 		msg.maxheap = config['maxheap']
 		msg.startheap = config['startheap']
 		return msg

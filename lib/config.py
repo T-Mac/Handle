@@ -1,6 +1,6 @@
 import yaml
 
-def load_config(config = 'default' , section = None, keys=[]):
+def load_server_config(config = 'default' , section = None, keys=[]):
 	with open('config/%s/handle.yml'%config, 'r') as configfile:
 		file = yaml.load(configfile)
 		values = {}

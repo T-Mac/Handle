@@ -13,6 +13,7 @@ class Package(yaml.YAMLObject):
 		self.craftbukkit = None
 		self.plugins = plugins
 		self.pkg_version = None
+		self.pkg_name = None
 
 	def __repr__(self):
 		return "%s(cb_version=%r, channel=%r, craftbukkit=%r, plugins=%r, pkg_version=%r)"%(
@@ -33,7 +34,7 @@ class Craftbukkit(yaml.YAMLObject):
 	def __repr__(self):
 		return "%s(version=%r, path=%r, md5=%r, url=%r)"%(self.__class__.__name__, self.version, self.path, self.md5, self.url)
 		
-class Plugin(object):
+class Plugin(yaml.YAMLObject):
 	yaml_tag = '!Plugin'
 	def __init__(self, path, plugin, md5):
 		self.path = path
@@ -54,9 +55,10 @@ class Package_Constructor(object):
 		self.pipeline.Register(constructFilters.CBDownloadFilter(self.progcall))
 		self.pipeline.Register(constructFilters.PluginDlFilter(self.progcall))
 		
-	def Construct(self, cb_version = 'latest', channel = 'rb', plugins = {}):
+	def Construct(self, cb_version = 'latest', channel = 'dev', plugins = {'jsonapi':True}, name = None):
 		msg = Package(cb_version, channel, plugins)
-		module_logger.info('Created Package - cb: %s - ch: %s - pl: %s'%(cb_version, channel, str(plugins)))
+		msg.pkg_name = name
+		module_logger.info('Created Package - %s - cb: %s - ch: %s - pl: %s'%(msg.pkg_name, cb_version, channel, str(plugins)))
 		pkg = self.Invoke(msg)
 		return pkg
 		
@@ -66,9 +68,25 @@ class Package_Constructor(object):
 		
 class Package_Handler(object):
 	def __init__(self):
-		self.packages = []
-
-	def load(self, package = 'all'):
-		if package == 'all':
+		self.packages = {}
+		self.Constructor = Package_Constructor()
+	def load(self):
+		try:
+			with open('packages.yml', 'r') as file:
+				for package in yaml.load_all(file):
+					self.packages[package.pkg_name] = package
+		except IOError:
 			pass
 			
+	def save(self):
+		with open('packages.yml', 'a') as file:
+			yaml.dump_all(self.packages.values(), file)
+			 
+	def get(self, name):
+		self.load()
+		if name in self.packages:
+			return self.packages[name]
+		else:
+			self.packages[name] = self.Constructor.Construct(name=name)
+			self.save()
+			return self.packages[name]
