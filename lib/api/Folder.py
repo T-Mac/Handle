@@ -3,6 +3,8 @@ import time
 from path import path
 import requests
 import logging
+import os.path
+import os
 module_logger = logging.getLogger(__name__)
 
 class FolderApi(object):
@@ -37,6 +39,8 @@ class FolderApi(object):
 			
 	@staticmethod
 	def dl_file(url, filename, callback=None):
+		if not os.path.exists('jars'):
+			os.mkdir('jars')
 		module_logger.info('Starting download of URL: %s'%url)
 		start = time.time()
 		r = requests.get(url, stream = True)
