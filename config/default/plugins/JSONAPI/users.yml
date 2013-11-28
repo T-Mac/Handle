@@ -1,0 +1,9 @@
+users:
+- username: handle
+  password: password
+  groups:
+  - full_control
+- username: chatonly
+  password: example
+  groups:
+  - chat_only

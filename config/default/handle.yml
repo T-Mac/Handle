@@ -1,0 +1,3 @@
+settings:
+  startheap: 1024M
+  maxheap: 1024M
