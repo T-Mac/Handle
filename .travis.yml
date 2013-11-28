@@ -5,8 +5,3 @@ python:
 install: "pip install -r requirements.txt --use-mirrors"
 # command to run tests, e.g. python setup.py test
 script:  "py.test -v --download tests/test_package.py"
-
-# whitelist
-branches:
-  only:
-    - multiserver
