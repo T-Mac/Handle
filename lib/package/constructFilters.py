@@ -48,11 +48,14 @@ class PVIProcessFilter(object):
 class CBVersionFilter(object):
 	def Execute(self, msg):
 		version_list = Dl_Bukkit.get_cb_versions(msg.channel)
+		print version_list
 		for item in version_list:
 			if not item[0].find(msg.cb_version) == -1:
 				version = item
 				module_logger.debug('Found version match: %s'%version[0])
 				break
+			else:
+				module_logger.debug('Version mismatch: %s - %s'%(item[0], msg.cb_version))
 		match = FolderApi.check_for_existing('jars/', version[0].replace('.',''), version[1]['checksum_md5'])
 		if match:
 			msg.craftbukkit = package.Craftbukkit(version[0], match, version[1]['checksum_md5'], version[1]['url'])

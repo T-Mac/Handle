@@ -1,0 +1,12 @@
+groups:
+  - name: full_control
+    streams:
+      - ALLOW_ALL
+    methods:
+      - ALLOW_ALL
+  - name: chat_only
+    permissions:
+      - view_online_player_list
+      - view_map
+      - view_chat
+      - speak_in_chat

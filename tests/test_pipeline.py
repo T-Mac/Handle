@@ -36,3 +36,11 @@ def test_Aspects(pipeWaspect):
 def test_2Aspects(pipeW2Aspects):
 	msg = pipeW2Aspects.Execute(0)
 	assert not msg == 0
+
+def test_retry():
+	p = pipeline.Pipeline()
+	f = pipeobj.RetryFilter()
+	p.Register(f)
+	p.addFilterAspect(pipeobj.RetryAspect)
+	msg = pipeobj.TestMsg()
+	p.Execute(msg)

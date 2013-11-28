@@ -60,16 +60,16 @@ class Test_Package:
 		for plugin, object in msg.plugins.iteritems():
 			assert isinstance(object, package.Plugin)
 			
-	def test_PackageConstructor(self, pkgConstruct, mockinvoke):
-		pkg = pkgConstruct.Construct(mockinvoke[0], mockinvoke[1], mockinvoke[2])
-		assert hasattr(pkg, 'pkg_version')
-		assert hasattr(pkg, 'plugins')
-		for plugin, obj in pkg.plugins.iteritems():
-			assert isinstance(plugin, basestring)
-			assert isinstance(obj, package.Plugin)
-		assert isinstance(pkg.craftbukkit, package.Craftbukkit)
-		assert hasattr(pkg, 'channel')
-		print pkg.craftbukkit.url
+	# def test_PackageConstructor(self, pkgConstruct, mockinvoke):
+		# pkg = pkgConstruct.Construct(mockinvoke[0], mockinvoke[1], mockinvoke[2])
+		# assert hasattr(pkg, 'pkg_version')
+		# assert hasattr(pkg, 'plugins')
+		# for plugin, obj in pkg.plugins.iteritems():
+			# assert isinstance(plugin, basestring)
+			# assert isinstance(obj, package.Plugin)
+		# assert isinstance(pkg.craftbukkit, package.Craftbukkit)
+		# assert hasattr(pkg, 'channel')
+		# print pkg.craftbukkit.url
 		
 		
 		
