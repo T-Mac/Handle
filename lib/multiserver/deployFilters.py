@@ -7,6 +7,8 @@ import shutil
 import lib.config
 import shlex
 from lib.api.Folder import FolderApi
+import os.path
+
 class PkgVerifyFilter(object):
 	def Execute(self, msg):
 		pkg = msg.package
@@ -90,9 +92,13 @@ class DeployApi(object):
 			DeployApi.UpdateExistingDeploy(server)
 	@staticmethod
 	def CheckForExisting(name):
-		if 'servers/'+name in path.path('servers/').dirs():
-			return True
+		if os.path.exists('servers'):
+			if 'servers/'+name in path.path('servers/').dirs():
+				return True
+			else:
+				return False
 		else:
+			os.mkdir('servers')
 			return False
 		
 	@staticmethod
