@@ -8,3 +8,4 @@ lib/tmp
 servers/
 config/package
 .watsonrc
+packages.yml

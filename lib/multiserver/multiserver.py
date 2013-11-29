@@ -3,8 +3,13 @@ import shutil
 import os
 import lib.msg.pipeline as pipeline
 import deployFilters
+from lib.package import package
+import yaml
+import createFilters
 
-class Server(object):
+
+class Server(yaml.YAMLObject):
+	yaml_tag = '!Server'
 	def __init__(self, package, name, config='default'):
 		self.package = package
 		self.name = name
@@ -12,7 +17,16 @@ class Server(object):
 		self.deployed = False
 		self.config = config
 		self.running = False
-
+	
+	def __repr__(self):
+		return "%s(package=%r, name=%r, path=%r, deployed=%r, config=%r)"%(
+			self.__class__.__name__,
+			self.package,
+			self.name,
+			self.path,
+			self.deployed,
+			self.config)
+			
 class ServerController(object):
 	def __init__(self):
 		self.deploy_pipe = pipeline.Pipeline()
@@ -51,4 +65,27 @@ class ServerController(object):
 		
 class ServerHandler(object):
 	def __init__(self):
-		self.pkgPipeline = pipeline.Pipeline()
+		self.servers = {}
+		self.create_pipeline = pipeline.Pipeline()
+		self.create_pipeline.Register(createFilters.PkgCreateFilter())
+		self.create_pipeline.Register(createFilters.ServerCreateFilter())
+		self.Controller = ServerController()
+		
+	def load(self):
+		try:
+			with open('servers.yml', 'r') as file:
+				for server in yaml.load_all(file):
+					self.servers[server.name] = server
+		except IOError:
+			pass
+	
+	def save(self):
+		with open('servers.yml', 'a') as file:
+			yaml.dump_all(self.servers.values(), file)
+			
+	def create(self, server, package = 'default'):
+		server = self.create_pipeline.Execute((server, package))
+		self.servers[server.name] = server
+		self.Controller.Deploy(server)
+		return server
+		

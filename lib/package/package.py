@@ -79,7 +79,7 @@ class Package_Handler(object):
 			pass
 			
 	def save(self):
-		with open('packages.yml', 'a') as file:
+		with open('packages.yml', 'w') as file:
 			yaml.dump_all(self.packages.values(), file)
 			 
 	def get(self, name):

@@ -1,7 +1,7 @@
 import pytest
 from lib.package import package
 import lib.multiserver.deployFilters as deployFilters
-import lib.multiserver.multiserver as multiserver
+from lib.multiserver import multiserver
 
 @pytest.fixture(scope='class')
 def pkg():
@@ -17,6 +17,9 @@ def server(pkg):
 	srv = multiserver.Server(pkg, 'test2%s'%pkg.cb_version.replace('.',''))
 	return srv
 	
+@pytest.fixture(scope='class')
+def handler():
+	return multiserver.ServerHandler()
 class Test_MultiServer(object):
 	def test_PkgVerifyFilter(self, server):
 		filter = deployFilters.PkgVerifyFilter()
@@ -70,3 +73,12 @@ class TestPipeline(object):
 		assert hasattr(msg, 'startheap')
 		if hasattr(msg, 'startheap'):
 			assert isinstance(msg.startheap, basestring)
+			
+class Test_Handler(object):
+	def test_Server_Handler(self, handler):
+		server = handler.create('test')
+		assert isinstance(server, multiserver.Server)
+		assert isinstance(server.package, package.Package)
+		assert isinstance(server.package.craftbukkit, package.Craftbukkit)
+		for plugin in server.package.plugins.values():
+			assert isinstance(plugin, package.Plugin)
