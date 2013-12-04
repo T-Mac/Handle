@@ -8,6 +8,6 @@ script:  "py.test -v --download tests/test_package.py"
 notifications:
  webhooks:
   urls:
-   - http://desolate-wildwood-7853.herokuapp.com/relay/
+   - http://requestb.in/1f88j4i1
   on_success: always # default: always
   on_failure: always # default: always
